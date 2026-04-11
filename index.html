@@ -11,10 +11,9 @@
 <meta name="format-detection" content="telephone=no">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <title>Il Gigante di Stelle</title>
 <style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%; height: 100%; overflow: hidden;
@@ -150,7 +149,7 @@
       <b>"Aggiungi"</b> in alto a destra
     </div>
   </div>
-  <button class="dismiss-btn" id="dismissBtn">GIOCA ORA</button>
+  <button class="dismiss-btn" onclick="dismissIOSInstall()">GIOCA ORA</button>
 </div>
 
 <!-- Musiche per diverse situazioni -->
@@ -223,7 +222,7 @@ function showIOSHint() {
 
 // Previeni bounce/zoom su iOS
 document.addEventListener('touchmove', function(e) {
-  e.preventDefault();
+  if (e.scale !== 1) e.preventDefault();
 }, { passive: false });
 
 // Doppio tap per zoom - previeni
@@ -242,12 +241,6 @@ const gameOverScreen = document.getElementById('gameOver');
 
 let W, H, scale;
 const GAME_W = 400, GAME_H = 700;
-
-// Rileva dispositivo mobile per ottimizzazioni
-const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-// Su mobile, riduci effetti costosi
-const SHADOW_ENABLED = !isMobile;
-const MAX_SHADOW_BLUR = isMobile ? 0 : 8;
 
 function resize() {
   const r = window.devicePixelRatio || 1;
@@ -269,19 +262,6 @@ function resize() {
 resize();
 window.addEventListener('resize', resize);
 
-// === HELPER PER PERFORMANCE ===
-// Sostituisce shadowBlur con versione limitata per mobile
-function setShadow(color, blur) {
-  if (SHADOW_ENABLED && blur > 0) {
-    ctx.shadowColor = color;
-    ctx.shadowBlur = Math.min(blur, MAX_SHADOW_BLUR);
-  }
-}
-function clearShadow() {
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
-  ctx.shadowColor = 'transparent';
-}
-
 // === AUDIO SYSTEM ===
 let audioCtx = null;
 
@@ -292,18 +272,12 @@ function initAudio() {
       audioCtx = new AudioContext();
     }
   } catch(e) {
-    // Audio not available
+    console.log('Audio not available');
   }
 }
 
 function playSound(type) {
   if (!audioCtx) return;
-
-  // Throttle: evita di suonare lo stesso suono troppo spesso
-  const nowPerf = performance.now();
-  const cooldown = SOUND_COOLDOWN[type] || 50;
-  if (lastSoundTime[type] && nowPerf - lastSoundTime[type] < cooldown) return;
-  lastSoundTime[type] = nowPerf;
 
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
@@ -524,14 +498,14 @@ function playMusicTrack(trackName) {
       }
       track.play().catch(e => {
         if (trackName === 'boss') {
-          // Boss music blocked, using fallback
+          console.log('Boss music blocked, using fallback');
           startProceduralBossMusic();
         }
       });
       currentMusicTrack = trackName;
     }
   } catch(e) {
-    // Music playback error
+    console.log('Music playback error:', e);
   }
 }
 
@@ -551,8 +525,7 @@ let floatingNotifications = [];
 const POWERUP_NOTIFICATIONS = {
   shield: { text: 'SHIELD', icon: '█', subtext: 'ACTIVE' },
   double: { text: 'DOUBLE FIRE', icon: '▶▶', subtext: 'ACTIVE' },
-  bomb: { text: 'BOMB', icon: '◉', subtext: 'CLEAR!' },
-  health: { text: 'HEALTH', icon: '+', subtext: '+1 HP' }
+  bomb: { text: 'BOMB', icon: '◉', subtext: 'CLEAR!' }
 };
 
 function addFloatingNotification(type, x, y) {
@@ -587,7 +560,7 @@ function drawFloatingNotifications() {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = Math.min(8, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 8;
     ctx.fillText(n.text, n.x, n.y);
     // Icona
     ctx.font = '8px "Press Start 2P", monospace';
@@ -650,7 +623,7 @@ function stopProceduralBossMusic() {
 
 // === POWER-UPS ===
 let powerups = [];
-const POWERUP_TYPES = ['shield', 'double', 'bomb', 'health'];
+const POWERUP_TYPES = ['shield', 'double', 'bomb'];
 const POWERUP_DURATION = 600; // 10 secondi a 60fps
 const DOUBLE_DURATION = 1200; // 20 secondi a 60fps
 
@@ -663,17 +636,7 @@ let playerPowerups = {
 };
 
 function spawnPowerup() {
-  // Ponderazione: health più comune nel primo ciclo, bilanciato poi
-  const weights = wave <= 10
-    ? [0.2, 0.2, 0.15, 0.45]  // shield, double, bomb, health (più salute nel primo ciclo)
-    : [0.3, 0.3, 0.2, 0.2];   // bilanciato nei cicli successivi
-  const r = Math.random();
-  let type;
-  if (r < weights[0]) type = 'shield';
-  else if (r < weights[0] + weights[1]) type = 'double';
-  else if (r < weights[0] + weights[1] + weights[2]) type = 'bomb';
-  else type = 'health';
-
+  const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
   powerups.push({
     x: Math.random() * (GAME_W - 40) + 20,
     y: -20,
@@ -693,7 +656,7 @@ function drawPowerup(x, y, type, pulse) {
 
   // Glow
   ctx.shadowColor = '#fff';
-  ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+  ctx.shadowBlur = 10;
 
   // Box
   ctx.strokeStyle = '#fff';
@@ -716,9 +679,6 @@ function drawPowerup(x, y, type, pulse) {
     case 'bomb':
       ctx.fillText('B', 0, 0);
       break;
-    case 'health':
-      ctx.fillText('H', 0, 0);
-      break;
   }
 
   ctx.restore();
@@ -726,7 +686,7 @@ function drawPowerup(x, y, type, pulse) {
 
 function updatePowerups() {
   // Spawn occasionale
-  if (Math.random() < 0.004 && powerups.length < 2) {
+  if (Math.random() < 0.002 && powerups.length < 2) {
     spawnPowerup();
   }
 
@@ -765,21 +725,9 @@ function updatePowerups() {
     if (playerPowerups.doubleTime <= 0) playerPowerups.double = false;
   }
 
-  // Collisione powerup-giocatore (con magnetismo)
+  // Collisione powerup-giocatore
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
-    // Magnetismo: attira power-up verso il giocatore
-    if (upgrades.magnetRange > 0) {
-      const dx = player.x - p.x;
-      const dy = player.y - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const magnetDist = 30 + upgrades.magnetRange * 30;
-      if (dist < magnetDist && dist > 0) {
-        const strength = 0.15 * upgrades.magnetRange;
-        p.vx += (dx / dist) * strength;
-        p.vy += (dy / dist) * strength;
-      }
-    }
     if (collides(player.x, player.y, 15, p.x, p.y, 15)) {
       playSound('powerup');
       triggerFlash(0.2);
@@ -797,15 +745,11 @@ function updatePowerups() {
           playerPowerups.double = true;
           playerPowerups.doubleTime = DOUBLE_DURATION;
           break;
-        case 'health':
-          player.hp = Math.min(player.maxHP, player.hp + 1);
-          break;
         case 'bomb':
           // Distrugge tutti i nemici sullo schermo
           for (const m of meteors) {
             addExplosion(m.x, m.y);
-            addCombo();
-            score += Math.floor(10 * getComboMultiplier());
+            score += 10;
           }
           meteors = [];
           for (const e of enemies) {
@@ -847,7 +791,6 @@ function drawPowerupStatus() {
     ctx.fillText('DOUBLE ' + remaining + 's', 10, y);
     y -= 10;
   }
-  // Health powerup is instant, no timer to display
 }
 
 // === BOSS PHASES ===
@@ -864,22 +807,9 @@ function updateBossPhases() {
   else if (hpRatio <= 0.3) {
     boss.phase = 2;
   }
-  // Fase 1: sopra 60% HP
-  else {
-    boss.phase = 0;
-  }
 }
 
 // === PERSISTENZA ===
-// Highscore cache - avoid localStorage read every frame
-let cachedHighscore = 0;
-function refreshHighscore() {
-  try {
-    const hs = JSON.parse(localStorage.getItem('giganteHighscores') || '[]');
-    cachedHighscore = hs.length > 0 ? hs[0].score : 0;
-  } catch(e) { cachedHighscore = 0; }
-}
-
 function saveHighscore() {
   try {
     const highscores = JSON.parse(localStorage.getItem('giganteHighscores') || '[]');
@@ -887,7 +817,6 @@ function saveHighscore() {
     highscores.sort((a, b) => b.score - a.score);
     highscores.splice(10); // Top 10
     localStorage.setItem('giganteHighscores', JSON.stringify(highscores));
-    cachedHighscore = highscores.length > 0 ? highscores[0].score : 0;
   } catch(e) {}
 }
 
@@ -900,7 +829,8 @@ function loadHighscores() {
 }
 
 function getHighscore() {
-  return cachedHighscore;
+  const hs = loadHighscores();
+  return hs.length > 0 ? hs[0].score : 0;
 }
 
 // --- ASSETS ---
@@ -965,6 +895,9 @@ const totalAssets = 8 + 12 + 5 + 5 + 3; // player, boss, projectile, meteors, me
 
 function assetLoaded() {
   assetsLoaded++;
+  if (assetsLoaded >= totalAssets) {
+    console.log("All assets loaded successfully");
+  }
 }
 
 assets.player.onload = assetLoaded;
@@ -1000,8 +933,8 @@ function drawPlayerShip(x, y, frame) {
   ctx.save();
   ctx.translate(x, y);
 
-  // Aggiungi particelle motore (ogni 3 frame su mobile, 2 su desktop)
-  if (frame % (isMobile ? 3 : 2) === 0) {
+  // Aggiungi particelle motore
+  if (frame % 2 === 0) {
     addEngineParticle(x, y + 20);
   }
 
@@ -1013,7 +946,7 @@ function drawPlayerShip(x, y, frame) {
     ctx.globalAlpha = 0.6;
     ctx.fillStyle = '#fff';
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.moveTo(-8, 20);
     ctx.lineTo(0, 35 + Math.sin(frame * 0.3) * 5);
@@ -1021,7 +954,7 @@ function drawPlayerShip(x, y, frame) {
     ctx.closePath();
     ctx.fill();
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     ctx.drawImage(assets.player, -size/2, -size/2, size, size);
   } else {
@@ -1074,10 +1007,10 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       // Effetto glow (grayscale)
       if (attacking) {
         ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-        ctx.shadowBlur = Math.min(25, MAX_SHADOW_BLUR);
+        ctx.shadowBlur = 25;
       } else {
         ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-        ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+        ctx.shadowBlur = 12;
       }
 
       // Scala in base agli HP
@@ -1104,7 +1037,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
         }
       }
       ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     } else {
       // Fallback boss2 (grayscale) - ingrandito 50%
       ctx.fillStyle = '#555';
@@ -1120,7 +1053,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.arc(-33, -22, 12, 0, Math.PI * 2);
       ctx.arc(33, -22, 12, 0, Math.PI * 2);
       ctx.fill();
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
     ctx.restore();
     return;
@@ -1167,7 +1100,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
         ctx.globalAlpha = 1;
       }
 
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     } else {
       // Fallback procedurale - cristallo esagonale
       const crystalGlow = useDamageSprites ? 0.8 : (attacking ? 1 : 0.5 + Math.sin(frame * 0.08) * 0.3);
@@ -1237,7 +1170,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.lineTo(-12, 0);
       ctx.closePath();
       ctx.fill();
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
 
       // Danni visivi aggiuntivi nel fallback
       if (dmgRatio < 0.4) {
@@ -1299,7 +1232,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
 
     // Corpo centrale oscuro
     ctx.fillStyle = '#222';
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.beginPath();
     ctx.arc(0, 0, 30, 0, Math.PI * 2);
     ctx.fill();
@@ -1321,7 +1254,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // "Occhi" solari ai lati
     ctx.fillStyle = attacking ? '#fff' : '#ddd';
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = Math.min(8, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(-18, -5, 5, 0, Math.PI * 2);
     ctx.arc(18, -5, 5, 0, Math.PI * 2);
@@ -1354,7 +1287,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       }
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -1373,7 +1306,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     ctx.strokeStyle = 'rgba(180, 180, 200, 0.4)';
     ctx.lineWidth = 8;
     ctx.shadowColor = 'rgba(200, 200, 255, 0.6)';
-    ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 15;
 
     for (let i = 0; i < 6; i++) {
       const baseAngle = (i / 6) * Math.PI * 2 + time;
@@ -1447,7 +1380,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     if (frame % 3 === 0) {
       const px = (Math.random() - 0.5) * 80;
       const py = (Math.random() - 0.5) * 80;
-      if (particles.length < MAX_PARTICLES) particles.push({
+      particles.push({
         x: boss.x + px,
         y: boss.y + py,
         vx: (Math.random() - 0.5) * 0.5,
@@ -1478,7 +1411,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.stroke();
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -1510,7 +1443,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Simbolo dell'infinito (∞)
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 4;
-    ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 15;
 
     // Lato sinistro del∞
     ctx.beginPath();
@@ -1528,7 +1461,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
 
     // Punti di intersezione luminosi
     ctx.fillStyle = '#fff';
-    ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 20;
     ctx.beginPath();
     ctx.arc(-40, 0, 6 * pulse, 0, Math.PI * 2);
     ctx.arc(40, 0, 6 * pulse, 0, Math.PI * 2);
@@ -1538,7 +1471,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Simboli arcani interni
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 1;
-    ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 5;
 
     // Triangolo centrale ruotante
     ctx.save();
@@ -1590,15 +1523,15 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Terzo occhio centrale (attivo quando attacca)
     if (attacking) {
       ctx.fillStyle = '#fff';
-      ctx.shadowBlur = Math.min(25, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 25;
       ctx.beginPath();
       ctx.arc(0, -25, 4 + Math.sin(time * 5) * 2, 0, Math.PI * 2);
       ctx.fill();
     }
 
     // Particelle arcane
-    if (frame % 8 < 2 && attacking) {
-      if (particles.length < MAX_PARTICLES) particles.push({
+    if (frame % 4 < 2 && attacking) {
+      particles.push({
         x: boss.x + (Math.random() - 0.5) * 100,
         y: boss.y + (Math.random() - 0.5) * 60,
         vx: (Math.random() - 0.5) * 0.3,
@@ -1633,7 +1566,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       }
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -1663,7 +1596,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     ctx.strokeStyle = 'rgba(80, 80, 100, 0.6)';
     ctx.lineWidth = 4;
     ctx.shadowColor = 'rgba(50, 50, 70, 0.8)';
-    ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 10;
 
     for (let i = 0; i < 8; i++) {
       const baseAngle = (i / 8) * Math.PI * 2 + time * 0.5;
@@ -1698,7 +1631,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Corpo centrale - buco nero
     ctx.fillStyle = '#000';
     ctx.shadowColor = 'rgba(0, 0, 0, 1)';
-    ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 20;
     ctx.beginPath();
     ctx.arc(0, 0, 25, 0, Math.PI * 2);
     ctx.fill();
@@ -1723,7 +1656,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       // Spirale verso il centro
       ctx.fillStyle = '#fff';
       ctx.shadowColor = '#fff';
-      ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 5;
       ctx.beginPath();
       ctx.arc(eyeX, eyeY, 2 + Math.sin(time * 3 + i) * 0.5, 0, Math.PI * 2);
       ctx.fill();
@@ -1765,7 +1698,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       }
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -1801,7 +1734,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.strokeStyle = `rgba(255, 200, 150, ${brightness * 0.8})`;
       ctx.lineWidth = 3;
       ctx.shadowColor = 'rgba(255, 200, 150, 0.8)';
-      ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 10;
       for (let i = 0; i < 6; i++) {
         const flareAngle = (i / 6) * Math.PI * 2 + time * 0.5;
         const flareLen = 30 + Math.sin(time * 5 + i) * 20;
@@ -1810,20 +1743,20 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
         ctx.lineTo(Math.cos(flareAngle) * flareLen, Math.sin(flareAngle) * flareLen);
         ctx.stroke();
       }
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
 
     // Corpo principale - stella
     ctx.fillStyle = `rgba(255, ${180 + Math.floor(brightness * 70)}, ${150 + Math.floor(brightness * 50)}, ${brightness})`;
     ctx.shadowColor = `rgba(255, 200, 150, ${brightness})`;
-    ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR) * pulse;
+    ctx.shadowBlur = 20 * pulse;
     ctx.beginPath();
     ctx.arc(0, 0, 30, 0, Math.PI * 2);
     ctx.fill();
 
     // Zone scure (macchie solari)
     ctx.fillStyle = `rgba(150, 80, 50, ${brightness * 0.8})`;
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     if (dmgRatio < 0.8) {
       ctx.beginPath();
       ctx.ellipse(-10, -5, 8, 6, time * 0.3, 0, Math.PI * 2);
@@ -1843,7 +1776,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Nucleo luminoso centrale
     ctx.fillStyle = '#fff';
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR) * pulse;
+    ctx.shadowBlur = 15 * pulse;
     ctx.beginPath();
     ctx.arc(0, 0, 12 * pulse, 0, Math.PI * 2);
     ctx.fill();
@@ -1859,7 +1792,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     if (frame % 20 < 10) {
       ctx.fillStyle = `rgba(255, 180, 130, ${brightness})`;
       ctx.shadowColor = 'rgba(255, 200, 150, 0.5)';
-      ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 5;
       for (let i = 0; i < 3; i++) {
         const debrisAngle = time * 0.8 + i * 2.1;
         const debrisDist = 45 + Math.sin(time * 2 + i) * 10;
@@ -1872,7 +1805,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
         );
         ctx.fill();
       }
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
 
     // Eruzioni visive quando HP basso
@@ -1887,8 +1820,8 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     }
 
     // Particelle di decadimento
-    if (frame % 10 === 0 && dmgRatio < 0.7) {
-      if (particles.length < MAX_PARTICLES) particles.push({
+    if (frame % 5 === 0 && dmgRatio < 0.7) {
+      particles.push({
         x: boss.x + (Math.random() - 0.5) * 60,
         y: boss.y + (Math.random() - 0.5) * 60,
         vx: (Math.random() - 0.5) * 0.5,
@@ -1901,7 +1834,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       });
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -1928,7 +1861,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     ctx.strokeStyle = '#777';
     ctx.lineWidth = 3;
     ctx.shadowColor = 'rgba(100, 100, 100, 0.5)';
-    ctx.shadowBlur = Math.min(8, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 8;
 
     // Forma principale irregolare
     ctx.beginPath();
@@ -1981,7 +1914,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Crepe e texture
     ctx.strokeStyle = '#444';
     ctx.lineWidth = 2;
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     // Crepe principali
     ctx.beginPath();
@@ -2084,8 +2017,8 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     }
 
     // Particelle di polvere
-    if (frame % 12 === 0) {
-      if (particles.length < MAX_PARTICLES) particles.push({
+    if (frame % 8 === 0) {
+      particles.push({
         x: boss.x + (Math.random() - 0.5) * 70,
         y: boss.y + (Math.random() - 0.5) * 50,
         vx: (Math.random() - 0.5) * 0.3,
@@ -2097,7 +2030,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       });
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -2214,7 +2147,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
 
     // Nuclei orbitanti (riferimento a Boss 5)
     ctx.fillStyle = '#fff';
-    ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 12;
     for (let i = 0; i < 4; i++) {
       const orbitAngle = time * 0.5 + i * (Math.PI / 2);
       const orbitDist = 20 + Math.sin(time * 2 + i) * 5;
@@ -2227,7 +2160,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     const eyeOpen = attacking ? 1 : 0.5 + Math.sin(time * 2) * 0.2;
     ctx.fillStyle = '#fff';
     ctx.shadowColor = 'rgba(255, 255, 255, 1)';
-    ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 10;
 
     // Occhi laterali
     ctx.beginPath();
@@ -2246,7 +2179,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     if (attacking) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
       ctx.shadowColor = 'rgba(255, 255, 255, 1)';
-      ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 20;
       ctx.beginPath();
       ctx.arc(0, -20, 6 + Math.sin(time * 5) * 2, 0, Math.PI * 2);
       ctx.fill();
@@ -2281,8 +2214,8 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     }
 
     // Particelle cosmiche
-    if (frame % 8 === 0) {
-      if (particles.length < MAX_PARTICLES) particles.push({
+    if (frame % 3 === 0) {
+      particles.push({
         x: boss.x + (Math.random() - 0.5) * 100,
         y: boss.y + (Math.random() - 0.5) * 80,
         vx: (Math.random() - 0.5) * 0.5,
@@ -2295,7 +2228,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       });
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     ctx.restore();
     return;
   }
@@ -2307,10 +2240,10 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     // Effetto glow (grayscale)
     if (attacking) {
       ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-      ctx.shadowBlur = Math.min(25, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 25;
     } else {
       ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-      ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 12;
     }
 
     // Scala in base agli HP
@@ -2337,7 +2270,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       }
     }
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   } else {
     // Fallback boss1 (grayscale) - ingrandito
     ctx.fillStyle = '#555';
@@ -2353,7 +2286,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     ctx.arc(-30, -21, 11, 0, Math.PI * 2);
     ctx.arc(30, -21, 11, 0, Math.PI * 2);
     ctx.fill();
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   }
 
   ctx.restore();
@@ -2374,7 +2307,7 @@ function drawMeteor(x, y, size, rot, type = 'normal', hp = 1, maxHp = 1) {
       // Glow in base agli HP
       const hpRatio = hp / maxHp;
       ctx.shadowColor = hpRatio < 0.5 ? 'rgba(255, 150, 50, 0.8)' : 'rgba(150, 150, 150, 0.5)';
-      ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 10;
 
       ctx.drawImage(assets.meteorMassive, -w/2, -h/2, w, h);
 
@@ -2401,7 +2334,7 @@ function drawMeteor(x, y, size, rot, type = 'normal', hp = 1, maxHp = 1) {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     } else {
       // Fallback: meteorite massiccia procedurale
       ctx.fillStyle = '#555';
@@ -2438,18 +2371,18 @@ function drawMeteor(x, y, size, rot, type = 'normal', hp = 1, maxHp = 1) {
       const h = size * 2;
 
       // Glow blu/azzurro per indicare scudo
-      const glowPulse = Math.sin(frame * 0.1) * 0.3 + 0.7;
+      const glowPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
       ctx.shadowColor = `rgba(100, 200, 255, ${glowPulse})`;
-      ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 15;
 
       ctx.drawImage(assets.meteorShield, -w/2, -h/2, w, h);
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     } else {
       // Fallback: meteorite scudo procedurale
       // Glow pulsante
-      const glowPulse = Math.sin(frame * 0.1) * 0.3 + 0.7;
+      const glowPulse = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
       ctx.shadowColor = `rgba(100, 200, 255, ${glowPulse})`;
-      ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 12;
 
       ctx.fillStyle = '#8899aa';
       ctx.beginPath();
@@ -2476,7 +2409,7 @@ function drawMeteor(x, y, size, rot, type = 'normal', hp = 1, maxHp = 1) {
       ctx.closePath();
       ctx.stroke();
 
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     }
   } else {
     // Meteorite normale
@@ -2515,21 +2448,21 @@ function drawProjectile(x, y) {
   if (assets.projectile.complete && assets.projectile.naturalWidth > 0) {
     // Effetto glow (grayscale)
     ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-    ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 12;
 
     const w = 16, h = 32;
     ctx.drawImage(assets.projectile, x - w/2, y - h/2, w, h);
 
     // Scia luminosa
     ctx.globalAlpha = 0.4;
-    ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 20;
     ctx.drawImage(assets.projectile, x - w/2, y - h/2 + 8, w, h * 0.6);
     ctx.globalAlpha = 1;
   } else {
     // Fallback: proiettile procedurale (grayscale)
     ctx.fillStyle = '#fff';
     ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-    ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 10;
 
     // Nucleo luminoso
     ctx.beginPath();
@@ -2544,7 +2477,7 @@ function drawProjectile(x, y) {
     ctx.fillRect(x - 1.5, y + 2, 3, 10);
     ctx.globalAlpha = 1;
   }
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -2552,8 +2485,10 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
   ctx.save();
 
   if (type === 'crystal') {
-    // Proiettili cristallo - forma diamante semplificata
+    // Proiettili cristallo - forma diamante
     ctx.fillStyle = '#fff';
+    ctx.shadowColor = 'rgba(200, 220, 255, 0.9)';
+    ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.moveTo(x, y - (size || 4));
     ctx.lineTo(x + (size || 4), y);
@@ -2561,10 +2496,20 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
     ctx.lineTo(x - (size || 4), y);
     ctx.closePath();
     ctx.fill();
+
+    // Riflesso interno
+    ctx.fillStyle = 'rgba(200, 220, 255, 0.5)';
+    ctx.beginPath();
+    ctx.moveTo(x, y - (size || 4) * 0.5);
+    ctx.lineTo(x + (size || 4) * 0.3, y);
+    ctx.lineTo(x, y + (size || 4) * 0.3);
+    ctx.lineTo(x - (size || 4) * 0.3, y);
+    ctx.closePath();
+    ctx.fill();
   } else if (type === 'solar') {
     // Proiettili solari - forma stellare con flare
     ctx.shadowColor = 'rgba(255, 200, 100, 0.9)';
-    ctx.shadowBlur = Math.min(12, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 12;
 
     // Core luminoso
     ctx.fillStyle = '#fff';
@@ -2591,25 +2536,43 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
       ctx.stroke();
     }
   } else if (type === 'nebula') {
-    // Proiettili nebulosi - semplificati per performance
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = '#bbb';
+    // Proiettili nebulosi - forma amorfa con alone
+    ctx.shadowColor = 'rgba(180, 180, 220, 0.8)';
+    ctx.shadowBlur = 15;
+
+    // Alone esterno
+    ctx.fillStyle = 'rgba(150, 150, 180, 0.3)';
     ctx.beginPath();
-    ctx.arc(x, y, (size || 4) * 1.5, 0, Math.PI * 2);
+    ctx.arc(x, y, (size || 4) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Corpo principale amorfo
+    ctx.fillStyle = 'rgba(180, 180, 200, 0.6)';
+    ctx.beginPath();
+    // Forma irregolare
+    const wobble = frame * 0.1;
+    for (let i = 0; i <= 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const r = (size || 4) * (1 + Math.sin(wobble + i) * 0.2);
+      const px = x + Math.cos(a) * r;
+      const py = y + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
     ctx.fill();
 
     // Nucleo luminoso
-    ctx.globalAlpha = 1;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(x, y, (size || 4) * 0.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.beginPath();
-    ctx.arc(x, y, (size || 4) * 0.5, 0, Math.PI * 2);
-    ctx.fill();
   } else if (type === 'arcane') {
-    // Proiettili arcani - semplificati
+    // Proiettili arcani - forma geometrica mistica
+    ctx.shadowColor = 'rgba(200, 200, 255, 0.9)';
+    ctx.shadowBlur = 15;
+
+    // Simbolo esterno (diamante con punte)
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -2620,44 +2583,125 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
     ctx.closePath();
     ctx.stroke();
 
+    // Core luminoso
     ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(x, y, (size || 4) * 0.5, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (type === 'void') {
-    // Proiettili del vuoto - semplificati
-    ctx.fillStyle = 'rgba(30, 30, 50, 0.6)';
-    ctx.beginPath();
-    ctx.arc(x, y, (size || 4) * 1.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = '#111';
     ctx.beginPath();
     ctx.arc(x, y, (size || 4) * 0.6, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#888';
+    // Anello interno rotante
+    ctx.strokeStyle = 'rgba(200, 200, 255, 0.7)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(x, y, (size || 4) * 0.2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (type === 'stone') {
-    // Proiettili di pietra - semplificati
-    ctx.fillStyle = '#666';
+    ctx.arc(x, y, (size || 4) * 1.2, frame * 0.1, frame * 0.1 + Math.PI);
+    ctx.stroke();
+
+    // Particelle scintillanti
+    if (frame % 2 === 0) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      const sparkleAngle = frame * 0.3;
+      ctx.fillRect(
+        x + Math.cos(sparkleAngle) * (size || 4) * 1.8 - 1,
+        y + Math.sin(sparkleAngle) * (size || 4) * 1.8 - 1,
+        2, 2
+      );
+    }
+  } else if (type === 'void') {
+    // Proiettili del vuoto - oscuri con alone di assorbimento
+    ctx.shadowColor = 'rgba(50, 50, 80, 0.9)';
+    ctx.shadowBlur = 15;
+
+    // Alone esterno distorto
+    ctx.fillStyle = 'rgba(30, 30, 50, 0.5)';
     ctx.beginPath();
-    ctx.arc(x, y, (size || 4), 0, Math.PI * 2);
+    ctx.arc(x, y, (size || 4) * 2, 0, Math.PI * 2);
     ctx.fill();
 
+    // Anello di assorbimento
+    ctx.strokeStyle = 'rgba(100, 100, 150, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, (size || 4) * 1.5, frame * 0.2, frame * 0.2 + Math.PI * 1.5);
+    ctx.stroke();
+
+    // Core oscuro
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(x, y, (size || 4) * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Punto luminoso al centro
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(x, y, (size || 4) * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Particelle di assorbimento
+    ctx.fillStyle = 'rgba(150, 150, 200, 0.5)';
+    for (let i = 0; i < 3; i++) {
+      const angle = frame * 0.15 + i * (Math.PI * 2 / 3);
+      const dist = (size || 4) * 1.8;
+      ctx.beginPath();
+      ctx.arc(
+        x + Math.cos(angle) * dist,
+        y + Math.sin(angle) * dist,
+        1, 0, Math.PI * 2
+      );
+      ctx.fill();
+    }
+  } else if (type === 'stone') {
+    // Proiettili di pietra - massicci e irregolari
+    ctx.shadowColor = 'rgba(100, 100, 100, 0.7)';
+    ctx.shadowBlur = 5;
+
+    // Ombra
+    ctx.fillStyle = 'rgba(50, 50, 50, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(x + 2, y + 2, (size || 4) * 1.2, (size || 4) * 0.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Forma irregolare rocciosa
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    const sides = 6;
+    for (let i = 0; i <= sides; i++) {
+      const angle = (i / sides) * Math.PI * 2 + frame * 0.01;
+      const r = (size || 4) * (0.8 + Math.sin(i * 1.5) * 0.3);
+      if (i === 0) ctx.moveTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+      else ctx.lineTo(x + Math.cos(angle) * r, y + Math.sin(angle) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Bordo roccioso
     ctx.strokeStyle = '#888';
     ctx.lineWidth = 1;
     ctx.stroke();
+
+    // Highlight
+    ctx.fillStyle = '#999';
+    ctx.beginPath();
+    ctx.arc(x - (size || 4) * 0.3, y - (size || 4) * 0.3, (size || 4) * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crepa
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x - (size || 4) * 0.5, y);
+    ctx.lineTo(x + (size || 4) * 0.3, y - (size || 4) * 0.2);
+    ctx.stroke();
   } else {
-    // Proiettili nemici normali - versione semplificata per performance
-    ctx.fillStyle = '#aaa';
+    // Proiettili nemici normali in grayscale
+    const brightness = color === '#f0f' ? 200 : 150;
+    ctx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness})`;
+    ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(x, y, size || 3, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -2681,13 +2725,13 @@ function drawEngineParticles() {
     const alpha = p.life / p.maxLife;
     ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
     ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowBlur = Math.min(4, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 4;
     ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
     p.x += p.vx;
     p.y += p.vy;
     p.life--;
   }
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
   engineParticles = engineParticles.filter(p => p.life > 0);
 }
 
@@ -2696,7 +2740,7 @@ function addBossSparks(x, y) {
   for (let i = 0; i < 8; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = 2 + Math.random() * 3;
-    if (particles.length < MAX_PARTICLES) particles.push({
+    particles.push({
       x, y,
       vx: Math.cos(a) * speed,
       vy: Math.sin(a) * speed,
@@ -2732,13 +2776,13 @@ function drawDamageNumbers() {
     ctx.font = 'bold 12px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-    ctx.shadowBlur = Math.min(6, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 6;
     ctx.fillText('+' + d.dmg, 0, 0);
     ctx.restore();
     d.y += d.vy;
     d.life--;
   }
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
   damageNumbers = damageNumbers.filter(d => d.life > 0);
 }
 
@@ -2770,8 +2814,7 @@ function drawShockwaves() {
 let noiseBuffer = [];
 function generateNoise() {
   noiseBuffer = [];
-  const noiseCount = isMobile ? 80 : 200;
-  for (let i = 0; i < noiseCount; i++) {
+  for (let i = 0; i < 200; i++) {
     noiseBuffer.push({
       x: Math.random() * GAME_W,
       y: Math.random() * GAME_H,
@@ -2782,18 +2825,12 @@ function generateNoise() {
 }
 generateNoise();
 
-// Linee di scansione CRT - pre-renderizzate su canvas offscreen
-const scanlineCanvas = document.createElement('canvas');
-scanlineCanvas.width = GAME_W;
-scanlineCanvas.height = GAME_H;
-const scanlineCtx = scanlineCanvas.getContext('2d');
-scanlineCtx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-for (let y = 0; y < GAME_H; y += 3) {
-  scanlineCtx.fillRect(0, y, GAME_W, 1);
-}
-
+// Linee di scansione CRT
 function drawScanlines() {
-  ctx.drawImage(scanlineCanvas, 0, 0);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+  for (let y = 0; y < GAME_H; y += 3) {
+    ctx.fillRect(0, y, GAME_W, 1);
+  }
 }
 
 // Effetto rumore/grain
@@ -2813,7 +2850,7 @@ function addImpactParticles(x, y, count = 8, size = 3) {
   for (let i = 0; i < count; i++) {
     const a = Math.random() * Math.PI * 2;
     const speed = 1 + Math.random() * 3;
-    if (particles.length < MAX_PARTICLES) particles.push({
+    particles.push({
       x, y,
       vx: Math.cos(a) * speed,
       vy: Math.sin(a) * speed,
@@ -2873,19 +2910,13 @@ function drawEnemyBulletTrails() {
   enemyBulletTrails = enemyBulletTrails.filter(t => t.life > 0);
 }
 
-// Effetto vignetta - pre-renderizzato su canvas offscreen
-const vignetteCanvas = document.createElement('canvas');
-vignetteCanvas.width = GAME_W;
-vignetteCanvas.height = GAME_H;
-const vignetteCtx = vignetteCanvas.getContext('2d');
-const vGrad = vignetteCtx.createRadialGradient(GAME_W/2, GAME_H/2, GAME_H * 0.3, GAME_W/2, GAME_H/2, GAME_H * 0.8);
-vGrad.addColorStop(0, 'transparent');
-vGrad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
-vignetteCtx.fillStyle = vGrad;
-vignetteCtx.fillRect(0, 0, GAME_W, GAME_H);
-
+// Effetto vignetta
 function drawVignette() {
-  ctx.drawImage(vignetteCanvas, 0, 0);
+  const grad = ctx.createRadialGradient(GAME_W/2, GAME_H/2, GAME_H * 0.3, GAME_W/2, GAME_H/2, GAME_H * 0.8);
+  grad.addColorStop(0, 'transparent');
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, GAME_W, GAME_H);
 }
 
 // Linee di velocità (effetto movimento)
@@ -2995,7 +3026,7 @@ function drawScreenFlash() {
 }
 
 // --- STARS & BACKGROUND ---
-const stars = Array.from({length: isMobile ? 50 : 100}, () => ({
+const stars = Array.from({length: 100}, () => ({
   x: Math.random() * GAME_W,
   y: Math.random() * GAME_H,
   s: Math.random() * 2 + 0.5,
@@ -3024,18 +3055,17 @@ const cosmicDust = Array.from({length: 30}, () => ({
 }));
 
 function drawBackground() {
-  // Nebulose grayscale - usa cerchi semplici invece di gradienti (più veloce)
+  // Nebulose grayscale
   for (const n of nebulaClouds) {
-    ctx.globalAlpha = 0.03;
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
-    ctx.fill();
+    const grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r);
+    grad.addColorStop(0, n.color);
+    grad.addColorStop(1, 'transparent');
+    ctx.fillStyle = grad;
+    ctx.fillRect(n.x - n.r, n.y - n.r, n.r * 2, n.r * 2);
     n.y += n.vy;
     n.x += n.vx;
     if (n.y > GAME_H + n.r) { n.y = -n.r; n.x = Math.random() * GAME_W; }
   }
-  ctx.globalAlpha = 1;
 
   // Stelle con parallasse
   for (const s of stars) {
@@ -3076,11 +3106,11 @@ function drawUI(score, playerHP, bossHP, bossMaxHP, bossName, wave, bossType = 1
   }
   ctx.fillStyle = '#fff';
   ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-  ctx.shadowBlur = Math.min(4, MAX_SHADOW_BLUR);
+  ctx.shadowBlur = 4;
   ctx.font = '10px "Press Start 2P", monospace';
   ctx.textAlign = 'right';
   ctx.fillText('SCORE: ' + scoreStr, GAME_W - 10, 20);
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
   ctx.restore();
 
   // Wave (grayscale)
@@ -3088,30 +3118,6 @@ function drawUI(score, playerHP, bossHP, bossMaxHP, bossName, wave, bossType = 1
   ctx.fillStyle = '#888';
   ctx.font = '10px "Press Start 2P", monospace';
   ctx.fillText('WAVE ' + wave, 10, 20);
-
-  // Tipo di wave speciale
-  if (waveType !== 'normal') {
-    ctx.font = '6px "Press Start 2P", monospace';
-    const waveLabels = { swarm: '<< SWARM >>', asteroid_storm: '<< ASTEROIDS >>', bonus: '<< BONUS >>' };
-    ctx.fillStyle = waveType === 'bonus' ? '#4f4' : '#ff4';
-    ctx.textAlign = 'center';
-    ctx.fillText(waveLabels[waveType] || '', GAME_W / 2, 35);
-    ctx.textAlign = 'left';
-  }
-
-  // Combo multiplier
-  if (combo >= 3) {
-    ctx.font = '10px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    const mult = getComboMultiplier();
-    ctx.fillStyle = mult >= 3 ? '#ff4' : mult >= 2 ? '#fff' : '#aaa';
-    ctx.shadowColor = '#fff';
-    ctx.shadowBlur = 4;
-    ctx.fillText('x' + mult + ' COMBO ' + combo, GAME_W / 2, 50);
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
-    ctx.textAlign = 'left';
-  }
 
   // Player HP animato (grayscale)
   hpBarAnim.targetHP = playerHP;
@@ -3183,9 +3189,9 @@ function drawUI(score, playerHP, bossHP, bossMaxHP, bossName, wave, bossType = 1
     ctx.font = '8px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowBlur = Math.min(4, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 4;
     ctx.fillText(bossName, GAME_W / 2, by - 6);
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     // Sfondo barra
     ctx.fillStyle = '#222';
@@ -3225,8 +3231,6 @@ function drawUI(score, playerHP, bossHP, bossMaxHP, bossName, wave, bossType = 1
 // --- GAME STATE ---
 let gameState = 'intro'; // intro, start, playing, paused, gameover, victory
 let pausedTime = 0; // Timer per animazione pause
-let gameOverHandled = false; // Flag per gestire game over nel game loop
-let lastFrameTime = performance.now(); // Per delta-time
 let introPhase = 0;      // 0-5: fasi dell'intro
 let introTimer = 0;      // Timer per le fasi
 let introTextProgress = 0; // Progressione testo teletype
@@ -3288,117 +3292,6 @@ let meteors = [];
 let enemies = []; // Nemici aggiuntivi
 let explosions = [];
 let particles = [];
-
-// Limiti massimi per prevenire lag
-const MAX_ENEMY_BULLETS = 80;
-const MAX_PARTICLES = 100;
-const MAX_EXPLOSIONS = 15;
-
-// Throttle per suoni (evita creare troppi nodi audio)
-let lastSoundTime = {};
-const SOUND_COOLDOWN = {
-  laser: 50,
-  hit: 30,
-  explosion: 100,
-  powerup: 200,
-  bossLaser: 80,
-  dash: 100,
-  warning: 500,
-  warningGlitch: 1000
-};
-
-// === SISTEMA COMBO ===
-let combo = 0;
-let comboTimer = 0;
-const COMBO_TIMEOUT = 120; // 2 secondi per mantenere il combo
-let maxCombo = 0;
-
-function addCombo() {
-  combo++;
-  comboTimer = COMBO_TIMEOUT;
-  if (combo > maxCombo) maxCombo = combo;
-}
-
-function getComboMultiplier() {
-  if (combo < 5) return 1;
-  if (combo < 10) return 1.5;
-  if (combo < 20) return 2;
-  if (combo < 35) return 3;
-  return 4;
-}
-
-function updateCombo() {
-  if (comboTimer > 0) {
-    comboTimer--;
-    if (comboTimer <= 0) {
-      combo = 0;
-    }
-  }
-}
-
-// === UPGRADE PERMANENTI ===
-const upgrades = {
-  fireRate: 0,      // -1 frame cooldown per livello (max 3)
-  bulletDamage: 0,  // +1 danno per livello (max 3)
-  moveSpeed: 0,     // +0.5 velocità per livello (max 3)
-  bulletCount: 0,   // +1 proiettile extra per livello (max 2)
-  hpRegen: 0,       // rigenera 1 HP ogni N secondi per livello (max 2)
-  magnetRange: 0    // attira power-up entro N px per livello (max 3)
-};
-
-let availableUpgrades = [];
-let upgradeSelectionActive = false;
-let selectedUpgrade = -1;
-
-const UPGRADE_DEFS = [
-  { key: 'fireRate', name: 'RAPID FIRE', desc: '-1 cooldown sparo', max: 3, icon: '>' },
-  { key: 'bulletDamage', name: 'POWER SHOT', desc: '+1 danno proiettile', max: 3, icon: '!' },
-  { key: 'moveSpeed', name: 'THRUST', desc: '+0.5 velocità', max: 3, icon: '^' },
-  { key: 'bulletCount', name: 'MULTI SHOT', desc: '+1 proiettile', max: 2, icon: '|' },
-  { key: 'hpRegen', name: 'REGEN', desc: 'Rigenera 1 HP / 20s', max: 2, icon: '+' },
-  { key: 'magnetRange', name: 'MAGNET', desc: 'Attira power-up', max: 3, icon: '*' }
-];
-
-function generateUpgradeChoices() {
-  // Filtra upgrade non ancora al max
-  const available = UPGRADE_DEFS.filter(u => upgrades[u.key] < u.max);
-  // Seleziona 3 a caso (o meno se non ce ne sono abbastanza)
-  const shuffled = available.sort(() => Math.random() - 0.5);
-  availableUpgrades = shuffled.slice(0, Math.min(3, shuffled.length));
-  if (availableUpgrades.length > 0) {
-    upgradeSelectionActive = true;
-    selectedUpgrade = -1;
-  }
-}
-
-function applyUpgrade(index) {
-  if (index >= 0 && index < availableUpgrades.length) {
-    const upgrade = availableUpgrades[index];
-    upgrades[upgrade.key]++;
-    upgradeSelectionActive = false;
-    availableUpgrades = [];
-    playSound('powerup');
-    triggerFlash(0.3);
-  }
-}
-
-// HP regen timer
-let hpRegenTimer = 0;
-
-// === TIPI DI WAVE SPECIALI ===
-let waveType = 'normal'; // 'normal', 'swarm', 'asteroid_storm', 'bonus'
-const WAVE_TYPES = ['normal', 'swarm', 'asteroid_storm', 'bonus'];
-
-function determineWaveType() {
-  // Ogni 3 wave, un tipo speciale
-  if (wave % 3 === 0 && wave > 1) {
-    const types = ['swarm', 'asteroid_storm'];
-    // Wave multipli di 6: wave bonus
-    if (wave % 6 === 0) return 'bonus';
-    return types[Math.floor(Math.random() * types.length)];
-  }
-  return 'normal';
-}
 
 // 10 BOSS UNICI
 const BOSS_DATA = [
@@ -3495,13 +3388,6 @@ document.addEventListener('keydown', e => {
   keys[e.code] = true;
   e.preventDefault();
 
-  // Selezione upgrade con tasti 1-3
-  if (upgradeSelectionActive) {
-    if (e.code === 'Digit1' || e.code === 'Numpad1') { applyUpgrade(0); return; }
-    if (e.code === 'Digit2' || e.code === 'Numpad2') { applyUpgrade(1); return; }
-    if (e.code === 'Digit3' || e.code === 'Numpad3') { applyUpgrade(2); return; }
-  }
-
   // PAUSA: Premi P o Escape per mettere in pausa
   if (gameState === 'playing' && (e.code === 'KeyP' || e.code === 'Escape')) {
     gameState = 'paused';
@@ -3515,16 +3401,17 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  // DEBUG: Salta a boss specifici con tasti 1-9 e 0 (solo se DEBUG attivo)
-  const DEBUG = false;
-  if (DEBUG && gameState === 'playing' && boss.active === false) {
+  // DEBUG: Salta a boss specifici con tasti 1-9 e 0
+  // Premi durante il gioco per saltare al boss corrispondente
+  if (gameState === 'playing' && boss.active === false) {
     const bossJump = {
       'Digit1': 1, 'Digit2': 2, 'Digit3': 3, 'Digit4': 4, 'Digit5': 5,
       'Digit6': 6, 'Digit7': 7, 'Digit8': 8, 'Digit9': 9, 'Digit0': 10
     };
     if (bossJump[e.code]) {
-      wave = bossJump[e.code] - 1;
-      waveTimer = 300;
+      wave = bossJump[e.code] - 1; // Imposta wave precedente
+      waveTimer = 300; // Forza spawn boss
+      console.log('Saltando al Boss ' + bossJump[e.code]);
     }
   }
 });
@@ -3532,21 +3419,6 @@ document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
-  // Selezione upgrade tramite touch
-  if (upgradeSelectionActive && availableUpgrades.length > 0) {
-    const t = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const tx = (t.clientX - rect.left) / scale;
-    const ty = (t.clientY - rect.top) / scale;
-    for (let i = 0; i < availableUpgrades.length; i++) {
-      const yPos = 180 + i * 110;
-      if (ty >= yPos - 15 && ty <= yPos + 75 && tx >= 40 && tx <= GAME_W - 40) {
-        applyUpgrade(i);
-        return;
-      }
-    }
-    return;
-  }
   const t = e.touches[0];
   const rect = canvas.getBoundingClientRect();
   touchX = (t.clientX - rect.left) / scale;
@@ -3568,27 +3440,10 @@ canvas.addEventListener('touchend', e => {
   e.preventDefault();
   touchX = null; touchY = null; touchFire = false; touchId = null;
 });
-canvas.addEventListener('touchcancel', e => {
-  touchX = null; touchY = null; touchFire = false; touchId = null;
-});
 
 // Mouse fallback
 let mouseDown = false;
 canvas.addEventListener('mousedown', e => {
-  // Selezione upgrade tramite click
-  if (upgradeSelectionActive && availableUpgrades.length > 0) {
-    const rect = canvas.getBoundingClientRect();
-    const mx = (e.clientX - rect.left) / scale;
-    const my = (e.clientY - rect.top) / scale;
-    for (let i = 0; i < availableUpgrades.length; i++) {
-      const yPos = 180 + i * 110;
-      if (my >= yPos - 15 && my <= yPos + 75 && mx >= 40 && mx <= GAME_W - 40) {
-        applyUpgrade(i);
-        return;
-      }
-    }
-    return;
-  }
   const rect = canvas.getBoundingClientRect();
   touchX = (e.clientX - rect.left) / scale;
   touchY = (e.clientY - rect.top) / scale;
@@ -3732,7 +3587,7 @@ function drawEnemy(enemy) {
 
     // Glow effect
     ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 5;
 
     // Disegna sprite
     ctx.drawImage(sprite, -size/2, -size/2, size, size);
@@ -3755,7 +3610,7 @@ function drawEnemy(enemy) {
       ctx.globalAlpha = 1;
     }
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   } else {
     // Fallback procedurale (se sprite non caricato)
     switch(enemy.type) {
@@ -3879,7 +3734,7 @@ function updateEnemies() {
 
       if (e.type === 'bomber') {
         // Proiettili grandi lenti
-        if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+        enemyBullets.push({
           x: e.x, y: e.y + e.size,
           vx: (dx / dist) * 1.5,
           vy: (dy / dist) * 1.5 + 1,
@@ -3888,7 +3743,7 @@ function updateEnemies() {
         });
       } else {
         // Proiettili normali
-        if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+        enemyBullets.push({
           x: e.x, y: e.y + e.size,
           vx: (dx / dist) * 2.5,
           vy: (dy / dist) * 2.5,
@@ -3959,7 +3814,7 @@ function updateEnemies() {
 }
 
 function resetGame() {
-  frame = 0; score = 0; wave = 1; lives = 2;
+  frame = 0; score = 0; wave = 1; lives = 0;
   player.x = GAME_W/2; player.y = GAME_H - 80; player.hp = player.maxHP; player.iFrames = 0; player.fireCD = 0;
   bullets = []; enemyBullets = []; meteors = []; enemies = []; explosions = []; particles = [];
   engineParticles = []; damageNumbers = []; shockwaves = [];
@@ -3970,31 +3825,23 @@ function resetGame() {
   screenFlash = 0;
   boss.active = false; boss.hp = 0; boss.enterDone = false; boss.defeated = false; boss.y = -100;
   boss.enterScale = 1; boss.attacking = false; boss.phase = 0; boss.attackTimer = 0; boss.patterns = 0;
-  boss.type = 1; boss.name = 'IL GIGANTE DELLE STELLE';
-  meteorTimer = 0; waveTimer = 0; bossIntro = false; screenShake = 0; hitFlash = 0; gameOverHandled = false;
+  boss.type = 1; boss.name = 'IL GIGANTE DI STELLE';
+  meteorTimer = 0; waveTimer = 0; bossIntro = false; screenShake = 0; hitFlash = 0;
   bossWarningState = { active: false, timer: 0, textProgress: 0, subtextProgress: 0, flickerPhase: 0, warningText: 'BOSS!', subtext: null, style: 'classic', fullText: '', bossType: 1, warningComplete: true, warningDuration: 180 };
   scorePop = { value: 0, scale: 1 };
   hpBarAnim = { targetHP: 5, currentHP: 5, flashTimer: 0 };
-  combo = 0; comboTimer = 0; maxCombo = 0;
-  upgrades.fireRate = 0; upgrades.bulletDamage = 0; upgrades.moveSpeed = 0;
-  upgrades.bulletCount = 0; upgrades.hpRegen = 0; upgrades.magnetRange = 0;
-  availableUpgrades = []; upgradeSelectionActive = false; selectedUpgrade = -1;
-  hpRegenTimer = 0;
-  waveType = 'normal';
   generateNoise();
 }
 
 function startBoss() {
-  // Cicla tra i 10 boss in base alla wave (ordine epico: 10, 9, 8... 1, poi ripete)
+  // Cicla tra i 10 boss in base alla wave (ORDINE INVERTITO: 10, 9, 8... 1)
   boss.type = 10 - ((wave - 1) % 10);
   boss.name = BOSS_DATA[boss.type - 1].name;
 
   boss.active = true;
-  // HP base + scaling per wave. Il primo ciclo è più facile, poi scala.
-  const baseHP = [80, 100, 90, 110, 96, 120, 104, 116, 130, 240];
-  // Difficoltà adattiva: primo ciclo ridotto, poi scala normalmente
-  const waveFactor = wave <= 10 ? (wave * 8) : ((wave - 10) * 12 + 80);
-  boss.hp = baseHP[boss.type - 1] + waveFactor;
+  // HP aumenta con ogni boss e wave
+  const baseHP = [80, 100, 90, 110, 96, 120, 104, 116, 130, 240];  // Boss finale +50% HP
+  boss.hp = baseHP[boss.type - 1] + wave * 16;  // Incremento wave raddoppiato
   boss.maxHP = boss.hp;
   boss.y = -100;
   // Boss 2 ha sprite più alto, needs targetY più basso
@@ -4215,7 +4062,7 @@ function bossAI() {
       boss.y += (baseY - boss.y) * 0.02;
       // Particelle di decadimento
       if (frame % 10 === 0) {
-        if (particles.length < MAX_PARTICLES) particles.push({
+        particles.push({
           x: boss.x + (Math.random() - 0.5) * 80,
           y: boss.y + (Math.random() - 0.5) * 60,
           vx: (Math.random() - 0.5) * 0.5,
@@ -4319,9 +4166,7 @@ function bossAI() {
   }
 
   boss.attackTimer++;
-  // Difficoltà adattiva: primo ciclo (wave 1-10) attacca più lentamente
-  const cycleBonus = wave <= 10 ? 30 : (wave <= 20 ? 15 : 0);
-  const attackRate = hpRatio > 0.5 ? 80 + cycleBonus : hpRatio > 0.25 ? 60 + cycleBonus : 40 + cycleBonus;
+  const attackRate = hpRatio > 0.5 ? 80 : hpRatio > 0.25 ? 60 : 40;
 
   if (boss.attackTimer >= attackRate) {
     boss.attackTimer = 0;
@@ -4338,14 +4183,14 @@ function bossAI() {
       if (pattern === 0) {
         for (let i = 0; i < 12; i++) {
           const a = (i/12) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*2, vy: Math.sin(a)*2, size: 3 });
+          enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*2, vy: Math.sin(a)*2, size: 3 });
         }
       } else if (pattern === 1) {
         for (let side = -1; side <= 1; side += 2) {
           for (let i = 0; i < 4; i++) {
             scheduleBossAttack(() => {
               const a = Math.PI/2 + side * 0.3 + (Math.random() - 0.5) * 0.2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x + side * 40, y: boss.y + 30, vx: Math.cos(a)*2.5, vy: Math.sin(a)*2.5, size: 4 });
+              enemyBullets.push({ x: boss.x + side * 40, y: boss.y + 30, vx: Math.cos(a)*2.5, vy: Math.sin(a)*2.5, size: 4 });
             }, i * 100);
           }
         }
@@ -4354,7 +4199,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             const a = (i/8) * Math.PI * 2 + frame * 0.1;
             const speed = 1.5 + (i % 3);
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, size: 3 });
+            enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*speed, vy: Math.sin(a)*speed, size: 3 });
           }, i * 60);
         }
       } else {
@@ -4365,7 +4210,7 @@ function bossAI() {
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
             const spread = (j - 1) * 0.15;
             const a = Math.atan2(dy, dx) + spread;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: Math.cos(a)*3.5, vy: Math.sin(a)*3.5, size: 4 });
+            enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: Math.cos(a)*3.5, vy: Math.sin(a)*3.5, size: 4 });
           }, j * 150);
         }
       }
@@ -4382,7 +4227,7 @@ function bossAI() {
           {dx: -30, dy: 0}
         ];
         for (const off of diamondOffsets) {
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + off.dx,
             y: boss.y + off.dy,
             vx: off.dx * 0.08,
@@ -4396,7 +4241,7 @@ function bossAI() {
         // Cristalli che rimbalzano (bouncing)
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2.5,
@@ -4411,7 +4256,7 @@ function bossAI() {
         for (let i = 0; i < 8; i++) {
           scheduleBossAttack(() => {
             const spawnX = Math.random() * (GAME_W - 40) + 20;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: spawnX,
               y: boss.y + 50,
               vx: (Math.random() - 0.5) * 1,
@@ -4427,7 +4272,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             const a = (i / 6) * Math.PI * 2 + frame * 0.15;
             const speed = 2 + (i % 3) * 0.5;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * speed,
@@ -4446,7 +4291,7 @@ function bossAI() {
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
             const spread = (j - 1) * 0.25;
             const a = Math.atan2(dy, dx) + spread;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * 4,
@@ -4465,7 +4310,7 @@ function bossAI() {
         for (let i = 0; i < 16; i++) {
           scheduleBossAttack(() => {
             const a = (i / 16) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * 2,
@@ -4496,7 +4341,7 @@ function bossAI() {
         playSound('bossLaser');
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2,
@@ -4513,7 +4358,7 @@ function bossAI() {
             const dx = player.x - boss.x;
             const dy = player.y - boss.y;
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: (dx / dist) * 2.5,
@@ -4531,7 +4376,7 @@ function bossAI() {
         for (const offset of angles) {
           for (let side = -1; side <= 1; side += 2) {
             const a = Math.PI/2 + offset;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x + side * 30,
               y: boss.y + 30,
               vx: Math.cos(a) * 3 * side,
@@ -4546,7 +4391,7 @@ function bossAI() {
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
           const speed = 0;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + Math.cos(a) * 60,
             y: boss.y + Math.sin(a) * 60,
             vx: 0,
@@ -4565,7 +4410,7 @@ function bossAI() {
         // Serie di proiettili veloci
         for (let i = 0; i < 5; i++) {
           scheduleBossAttack(() => {
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: (dx / dist) * 5,
@@ -4585,7 +4430,7 @@ function bossAI() {
         // Anello di fuoco che si espande
         for (let i = 0; i < 24; i++) {
           const a = (i / 24) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 1.5,
@@ -4619,7 +4464,7 @@ function bossAI() {
         playSound('powerup');
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 0.8,
@@ -4640,7 +4485,7 @@ function bossAI() {
           const dx = player.x - (boss.x + off.dx);
           const dy = player.y - (boss.y + off.dy);
           const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + off.dx,
             y: boss.y + off.dy,
             vx: (dx / dist) * 2,
@@ -4657,7 +4502,7 @@ function bossAI() {
             const count = 8 + ring * 4;
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * (1.5 + ring * 0.5),
@@ -4675,7 +4520,7 @@ function bossAI() {
         for (let i = 0; i < 12; i++) {
           scheduleBossAttack(() => {
             const spawnX = boss.x + (Math.random() - 0.5) * 100;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: spawnX,
               y: boss.y + 30,
               vx: (Math.random() - 0.5) * 0.5,
@@ -4693,7 +4538,7 @@ function bossAI() {
           for (let i = 0; i < 6; i++) {
             const a = Math.PI/2 + side * 0.5;
             const curve = i * 0.15 * side;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x + side * 30,
               y: boss.y,
               vx: Math.cos(a + curve) * 2,
@@ -4711,7 +4556,7 @@ function bossAI() {
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2;
           const dist = 100;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + Math.cos(a) * dist,
             y: boss.y + Math.sin(a) * dist,
             vx: -Math.cos(a) * 1.5,
@@ -4729,7 +4574,7 @@ function bossAI() {
         for (let i = 0; i < 4; i++) {
           const a = Math.random() * Math.PI * 2;
           const speed = 0.5 + Math.random() * 0.5;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * speed,
@@ -4748,7 +4593,7 @@ function bossAI() {
         for (let i = 0; i < 20; i++) {
           scheduleBossAttack(() => {
             const a = Math.random() * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x + Math.cos(a) * 50,
               y: boss.y + Math.sin(a) * 50,
               vx: Math.cos(a) * (0.8 + Math.random() * 0.5),
@@ -4776,7 +4621,7 @@ function bossAI() {
             const x = Math.cos(t) * 50 / (1 + Math.sin(t) * Math.sin(t));
             const y = Math.sin(t) * 25 * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t));
             const speed = 2.5;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: x * 0.05 * speed,
@@ -4794,7 +4639,7 @@ function bossAI() {
           for (let i = 0; i < 5; i++) {
             scheduleBossAttack(() => {
               const a = Math.PI/2 + (Math.random() - 0.5) * 0.8;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x + portal.x,
                 y: boss.y + portal.y,
                 vx: Math.cos(a) * 2.5,
@@ -4814,7 +4659,7 @@ function bossAI() {
         playSound('laser');
         // Raggio orizzontale
         for (let i = 0; i < 15; i++) {
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x - 70 + i * 10,
             y: boss.y + 40,
             vx: 0,
@@ -4825,7 +4670,7 @@ function bossAI() {
         }
         // Raggio verticale
         for (let i = 0; i < 8; i++) {
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y - 20 + i * 10,
             vx: 3,
@@ -4841,7 +4686,7 @@ function bossAI() {
             const baseAngle = (triangle / 3) * Math.PI * 2 + frame * 0.02;
             for (let i = 0; i < 3; i++) {
               const a = baseAngle + (i / 3) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * 2.5,
@@ -4859,7 +4704,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             const a = (i / 24) * Math.PI * 4 + frame * 0.05;
             const speed = 1.5 + (i / 24) * 1.5;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * speed,
@@ -4879,7 +4724,7 @@ function bossAI() {
             const dy = player.y - boss.y;
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
             // Proiettile che si ferma poi insegue
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y - 25, // Dal terzo occhio
               vx: (dx / dist) * 0.5,
@@ -4901,7 +4746,7 @@ function bossAI() {
         playSound('powerup');
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2,
@@ -4923,7 +4768,7 @@ function bossAI() {
             const count = 16 + ring * 4;
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * (2 + ring * 0.5),
@@ -4945,7 +4790,7 @@ function bossAI() {
         playSound('bossLaser');
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 1.5,
@@ -4963,7 +4808,7 @@ function bossAI() {
         // Proiettili lenti che curvano fortemente
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 0.8,
@@ -4979,7 +4824,7 @@ function bossAI() {
         for (let i = 0; i < 5; i++) {
           const spawnAngle = Math.random() * Math.PI * 2;
           const spawnDist = 60 + Math.random() * 80;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + Math.cos(spawnAngle) * spawnDist,
             y: boss.y + Math.sin(spawnAngle) * spawnDist,
             vx: 0,
@@ -5000,7 +4845,7 @@ function bossAI() {
           for (let i = 0; i < 6; i++) {
             scheduleBossAttack(() => {
               const a = Math.PI/2 + baseAngle;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * 2.5,
@@ -5019,7 +4864,7 @@ function bossAI() {
             // Spawn vicino al giocatore
             const offsetX = (Math.random() - 0.5) * 100;
             const offsetY = -50 - Math.random() * 50;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: player.x + offsetX,
               y: player.y + offsetY,
               vx: 0,
@@ -5037,7 +4882,7 @@ function bossAI() {
         // Prima espande
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2,
@@ -5059,7 +4904,7 @@ function bossAI() {
         for (let i = 0; i < 10; i++) {
           const a = Math.random() * Math.PI * 2;
           const dist = 30 + Math.random() * 20;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + Math.cos(a) * dist,
             y: boss.y + Math.sin(a) * dist,
             vx: -Math.cos(a) * 1,
@@ -5081,7 +4926,7 @@ function bossAI() {
             const dx = player.x - spawnX;
             const dy = player.y - spawnY;
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: spawnX,
               y: spawnY,
               vx: (dx / dist) * 2,
@@ -5105,7 +4950,7 @@ function bossAI() {
         for (let i = 0; i < 20; i++) {
           const a = (i / 20) * Math.PI * 2;
           const speed = 1.5 + Math.random() * 1.5;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * speed,
@@ -5124,7 +4969,7 @@ function bossAI() {
           for (let i = 0; i < 5; i++) {
             scheduleBossAttack(() => {
               const a = Math.PI/2 + side * 0.3 + (Math.random() - 0.5) * 0.4;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * 3,
@@ -5143,7 +4988,7 @@ function bossAI() {
         for (let i = 0; i < 12; i++) {
           scheduleBossAttack(() => {
             const spawnX = Math.random() * (GAME_W - 40) + 20;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: spawnX,
               y: -10,
               vx: 0,
@@ -5162,7 +5007,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             for (let i = 0; i < 12; i++) {
               const a = (i / 12) * Math.PI * 2 + wave * 0.2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * (2 + wave * 0.5),
@@ -5180,7 +5025,7 @@ function bossAI() {
         playSound('laser');
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x + Math.cos(a) * 30,
             y: boss.y + Math.sin(a) * 30,
             vx: Math.cos(a) * 2,
@@ -5201,7 +5046,7 @@ function bossAI() {
             const dy = player.y - boss.y;
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
             // Velocità crescente
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: (dx / dist) * (3 + j * 0.5),
@@ -5219,7 +5064,7 @@ function bossAI() {
         for (let i = 0; i < 6; i++) {
           scheduleBossAttack(() => {
             const a = Math.random() * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * 2,
@@ -5242,7 +5087,7 @@ function bossAI() {
             const count = 10 + ring * 2;
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x + Math.cos(a) * 100,
                 y: boss.y + Math.sin(a) * 80,
                 vx: -Math.cos(a) * 1.5,
@@ -5269,7 +5114,7 @@ function bossAI() {
         for (let i = 0; i < 4; i++) {
           scheduleBossAttack(() => {
             const a = Math.PI/2 + (i - 1.5) * 0.4;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y + 30,
               vx: Math.cos(a) * 1.5,
@@ -5290,7 +5135,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             const spawnX = boss.x + (Math.random() - 0.5) * 60;
             const a = Math.PI/2 + (Math.random() - 0.5) * 0.8;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: spawnX,
               y: boss.y + 40,
               vx: Math.cos(a) * (1 + Math.random()),
@@ -5310,7 +5155,7 @@ function bossAI() {
             // Pilastro che sale
             for (let i = 0; i < 6; i++) {
               scheduleBossAttack(() => {
-                if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+                enemyBullets.push({
                   x: boss.x + offset,
                   y: boss.y + 50 - i * 15,
                   vx: 0,
@@ -5330,7 +5175,7 @@ function bossAI() {
         screenShake = 2;
         for (let i = -3; i <= 3; i++) {
           const a = Math.PI/2 + i * 0.25;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y + 30,
             vx: Math.cos(a) * 1.2,
@@ -5347,7 +5192,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             for (let i = 0; i < 8; i++) {
               const spawnX = boss.x + (i - 3.5) * 30;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: spawnX,
                 y: GAME_H - 20,
                 vx: 0,
@@ -5371,7 +5216,7 @@ function bossAI() {
         for (let i = 0; i < 6; i++) {
           scheduleBossAttack(() => {
             const spread = (i - 2.5) * 0.08;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y + 30,
               vx: (dx / dist) * 2.5,
@@ -5390,7 +5235,7 @@ function bossAI() {
         // Detriti che cadono
         for (let i = 0; i < 10; i++) {
           scheduleBossAttack(() => {
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: Math.random() * GAME_W,
               y: -10,
               vx: (Math.random() - 0.5) * 0.5,
@@ -5411,7 +5256,7 @@ function bossAI() {
         // Esplosione di massi in tutte le direzioni
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2,
@@ -5438,7 +5283,7 @@ function bossAI() {
         // Diamante centrale
         for (let i = 0; i < 4; i++) {
           const a = (i / 4) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2,
@@ -5450,7 +5295,7 @@ function bossAI() {
         // Anello solare esterno
         for (let i = 0; i < 12; i++) {
           const a = (i / 12) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 1.5,
@@ -5467,7 +5312,7 @@ function bossAI() {
         for (const off of offsets) {
           for (let i = 0; i < 6; i++) {
             const a = (i / 6) * Math.PI * 2 + frame * 0.1;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x + off.dx,
               y: boss.y + off.dy,
               vx: Math.cos(a) * 1.5,
@@ -5488,7 +5333,7 @@ function bossAI() {
           const t = (i / 24) * Math.PI * 2;
           const x = Math.cos(t) * 50 / (1 + Math.sin(t) * Math.sin(t));
           const y = Math.sin(t) * 25 * Math.cos(t) / (1 + Math.sin(t) * Math.sin(t));
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: x * 0.05 * 2,
@@ -5505,7 +5350,7 @@ function bossAI() {
         for (let i = 0; i < 16; i++) {
           const a = (i / 16) * Math.PI * 2;
           const speed = 1.5 + Math.random() * 1.5;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * speed,
@@ -5529,7 +5374,7 @@ function bossAI() {
             addImpactParticles(pos.x, pos.y, 6, 3);
             for (let i = 0; i < 8; i++) {
               const a = (i / 8) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: pos.x,
                 y: pos.y,
                 vx: Math.cos(a) * 2,
@@ -5548,7 +5393,7 @@ function bossAI() {
           scheduleBossAttack(() => {
             const a = (i / 18) * Math.PI * 2 + frame * 0.05;
             const type = types[i % types.length];
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * 2,
@@ -5566,7 +5411,7 @@ function bossAI() {
             const count = 12 + wave * 4;
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2 + wave * 0.2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * (1.5 + wave * 0.5),
@@ -5591,7 +5436,7 @@ function bossAI() {
             addImpactParticles(portals[p].x, portals[p].y, 8, 3);
             for (let i = 0; i < 6; i++) {
               const a = (i / 6) * Math.PI * 2;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: portals[p].x,
                 y: portals[p].y,
                 vx: Math.cos(a) * 2,
@@ -5610,7 +5455,7 @@ function bossAI() {
         // Primo: cerchio esplosivo
         for (let i = 0; i < 24; i++) {
           const a = (i / 24) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: boss.x,
             y: boss.y,
             vx: Math.cos(a) * 2.5,
@@ -5623,7 +5468,7 @@ function bossAI() {
         for (let col = 0; col < 5; col++) {
           scheduleBossAttack(() => {
             for (let i = 0; i < 8; i++) {
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: GAME_W * 0.1 + col * GAME_W * 0.2,
                 y: -10,
                 vx: 0,
@@ -5643,7 +5488,7 @@ function bossAI() {
           // Boss 3: Cristalli
           for (let i = 0; i < 10; i++) {
             const a = (i / 10) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
               size: 4, type: 'crystal'
@@ -5653,7 +5498,7 @@ function bossAI() {
           // Boss 4: Solare
           for (let i = 0; i < 16; i++) {
             const a = (i / 16) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
               size: 4, type: 'solar'
@@ -5663,7 +5508,7 @@ function bossAI() {
           // Boss 5: Nebulosa
           for (let i = 0; i < 8; i++) {
             const a = (i / 8) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * 1, vy: Math.sin(a) * 1 + 0.5,
               size: 5, type: 'nebula', drift: true, life: 180
@@ -5673,7 +5518,7 @@ function bossAI() {
           // Boss 6: Arcano
           for (let i = 0; i < 6; i++) {
             const a = (i / 6) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * 2, vy: Math.sin(a) * 2,
               size: 4, type: 'arcane'
@@ -5683,7 +5528,7 @@ function bossAI() {
           // Boss 7: Vuoto
           for (let i = 0; i < 12; i++) {
             const a = (i / 12) * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x, y: boss.y,
               vx: Math.cos(a) * 1.5, vy: Math.sin(a) * 1.5,
               size: 4, type: 'void', gravity: true, gravityStrength: 0.02
@@ -5699,7 +5544,7 @@ function bossAI() {
           const types = ['crystal', 'solar', 'nebula', 'void', 'arcane', 'stone'];
           for (let i = 0; i < 6; i++) {
             const a = Math.random() * Math.PI * 2;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+            enemyBullets.push({
               x: boss.x,
               y: boss.y,
               vx: Math.cos(a) * 2,
@@ -5723,7 +5568,7 @@ function bossAI() {
             const types = ['crystal', 'solar', 'nebula', 'void', 'arcane', 'stone'];
             for (let i = 0; i < count; i++) {
               const a = (i / count) * Math.PI * 2 + wave * 0.3;
-              if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+              enemyBullets.push({
                 x: boss.x,
                 y: boss.y,
                 vx: Math.cos(a) * (2 + wave * 0.3),
@@ -5744,16 +5589,16 @@ function bossAI() {
         const dx = player.x - boss.x;
         const dy = player.y - boss.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
-        if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: (dx/dist)*2.5, vy: (dy/dist)*2.5, size: 4 });
+        enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: (dx/dist)*2.5, vy: (dy/dist)*2.5, size: 4 });
       } else if (pattern === 1) {
         for (let i = -2; i <= 2; i++) {
           const a = Math.PI/2 + i * 0.3;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: Math.cos(a)*2, vy: Math.sin(a)*2, size: 3 });
+          enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: Math.cos(a)*2, vy: Math.sin(a)*2, size: 3 });
         }
       } else if (pattern === 2) {
         for (let i = 0; i < 10; i++) {
           const a = (i/10) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*1.5, vy: Math.sin(a)*1.5, size: 3 });
+          enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a)*1.5, vy: Math.sin(a)*1.5, size: 3 });
         }
       } else {
         for (let j = 0; j < 3; j++) {
@@ -5761,7 +5606,7 @@ function bossAI() {
             const dx = player.x - boss.x;
             const dy = player.y - boss.y;
             const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: (dx/dist)*3, vy: (dy/dist)*3, size: 4 });
+            enemyBullets.push({ x: boss.x, y: boss.y + 45, vx: (dx/dist)*3, vy: (dy/dist)*3, size: 4 });
           }, j * 150);
         }
       }
@@ -5774,7 +5619,7 @@ function bossAI() {
         for (let i = 0; i < 20; i++) {
           scheduleBossAttack(() => {
             const x = boss.x + (i - 10) * 30;
-            if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({ x: x, y: boss.y + 50, vx: 0, vy: 3, size: 5 });
+            enemyBullets.push({ x: x, y: boss.y + 50, vx: 0, vy: 3, size: 5 });
           }, i * 30);
         }
       }
@@ -5794,13 +5639,13 @@ function bossAI() {
 }
 
 function addExplosion(x, y, size = 20) {
-  if (explosions.length < MAX_EXPLOSIONS) explosions.push({ x, y, t: 0, maxT: 25, size });
+  explosions.push({ x, y, t: 0, maxT: 25, size });
 
   // Particelle principali (grayscale)
   for (let i = 0; i < 15; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 1 + Math.random() * 4;
-    if (particles.length < MAX_PARTICLES) particles.push({
+    particles.push({
       x, y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
@@ -5816,7 +5661,7 @@ function addExplosion(x, y, size = 20) {
   for (let i = 0; i < 6; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 0.3 + Math.random() * 0.8;
-    if (particles.length < MAX_PARTICLES) particles.push({
+    particles.push({
       x, y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp - 0.5,
@@ -5831,7 +5676,7 @@ function addExplosion(x, y, size = 20) {
   for (let i = 0; i < 8; i++) {
     const a = Math.random() * Math.PI * 2;
     const sp = 2 + Math.random() * 3;
-    if (particles.length < MAX_PARTICLES) particles.push({
+    particles.push({
       x, y,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
@@ -5846,25 +5691,6 @@ function addExplosion(x, y, size = 20) {
 function collides(ax, ay, ar, bx, by, br) {
   const dx = ax - bx, dy = ay - by;
   return dx*dx + dy*dy < (ar+br)*(ar+br);
-}
-
-// Gestione unificata danno giocatore
-function handlePlayerHit() {
-  player.iFrames = 60;
-  player.hp--;
-  screenShake = 5;
-  hitFlash = 5;
-  playSound('hit');
-  if (player.hp <= 0) {
-    if (lives > 0) {
-      lives--;
-      player.hp = player.maxHP;
-      player.iFrames = 120;
-      triggerFlash(0.3);
-    } else {
-      gameState = 'gameover';
-    }
-  }
 }
 
 function update() {
@@ -5884,7 +5710,7 @@ function update() {
     if (Math.abs(tdy) > 5) dy = tdy > 0 ? 1 : -1;
   }
 
-  const speed = 4 + upgrades.moveSpeed * 0.5;
+  const speed = 4;
   player.x += dx * speed;
   player.y += dy * speed;
   player.x = Math.max(20, Math.min(GAME_W - 20, player.x));
@@ -5892,32 +5718,23 @@ function update() {
 
   if (player.iFrames > 0) player.iFrames--;
 
-  // Fire (con upgrade fire rate)
+  // Fire
   player.fireCD--;
   const firing = keys['Space'] || keys['KeyZ'] || touchFire;
   if (firing && player.fireCD <= 0) {
     playSound('laser');
-    player.fireCD = Math.max(3, (playerPowerups.double ? 6 : 8) - upgrades.fireRate);
+    player.fireCD = playerPowerups.double ? 6 : 8;
 
     if (playerPowerups.double) {
-      // Doppio sparo + extra bullets
+      // Doppio sparo
       bullets.push({ x: player.x - 8, y: player.y - 16, vy: -7 });
       bullets.push({ x: player.x + 8, y: player.y - 16, vy: -7 });
-      for (let i = 0; i < upgrades.bulletCount; i++) {
-        bullets.push({ x: player.x + (i + 1) * 16, y: player.y - 16, vy: -7 });
-        bullets.push({ x: player.x - (i + 1) * 16, y: player.y - 16, vy: -7 });
-      }
     } else {
       bullets.push({ x: player.x, y: player.y - 16, vy: -7 });
-      for (let i = 0; i < upgrades.bulletCount; i++) {
-        const offset = (i + 1) * 14;
-        bullets.push({ x: player.x + offset, y: player.y - 16, vy: -7 });
-        bullets.push({ x: player.x - offset, y: player.y - 16, vy: -7 });
-      }
     }
 
     // Recoil particle
-    if (particles.length < MAX_PARTICLES) particles.push({ x: player.x, y: player.y - 12, vx: (Math.random()-0.5)*0.5, vy: 2, life: 5, maxLife: 5 });
+    particles.push({ x: player.x, y: player.y - 12, vx: (Math.random()-0.5)*0.5, vy: 2, life: 5, maxLife: 5 });
   }
 
   // Update bullets
@@ -5949,7 +5766,7 @@ function update() {
         // Esplode in 8 direzioni
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 3,
@@ -6008,7 +5825,7 @@ function update() {
         const perpAngle2 = angle - Math.PI/2;
         const speed = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
 
-        if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+        enemyBullets.push({
           x: b.x,
           y: b.y,
           vx: Math.cos(perpAngle1) * speed,
@@ -6076,7 +5893,7 @@ function update() {
         // Esplode in 8 direzioni
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2.5,
@@ -6138,7 +5955,7 @@ function update() {
         // Esplode in 4 direzioni
         for (let i = 0; i < 4; i++) {
           const a = (i / 4) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2.5,
@@ -6182,7 +5999,7 @@ function update() {
         // Esplode
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
-          if (enemyBullets.length < MAX_ENEMY_BULLETS) enemyBullets.push({
+          enemyBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2,
@@ -6286,8 +6103,8 @@ function update() {
     for (let i = bullets.length - 1; i >= 0; i--) {
       if (collides(bullets[i].x, bullets[i].y, 3, boss.x, boss.y, 70)) {
         bullets.splice(i, 1);
-        boss.hp -= 2 + upgrades.bulletDamage;
-        score += Math.floor(5 * getComboMultiplier());
+        boss.hp -= 2;
+        score += 5;
         scorePop.scale = 1.3;
         screenShake = 3;
         hitFlash = 5;
@@ -6358,11 +6175,8 @@ function update() {
           wave++;
           waveTimer = 0;
 
-          // Scegli un upgrade dopo aver sconfitto il boss
-          generateUpgradeChoices();
-
-          // Vita extra ogni 3 wave (più frequente per bilanciare la difficoltà)
-          if (wave % 3 === 0) {
+          // Vita extra ogni 5 wave
+          if (wave % 5 === 0) {
             lives++;
             addImpactParticles(player.x, player.y, 15, 5);
             playSound('powerup');
@@ -6378,20 +6192,37 @@ function update() {
     for (let j = meteors.length - 1; j >= 0; j--) {
       if (collides(player.x, player.y, 10, meteors[j].x, meteors[j].y, meteors[j].size)) {
         if (playerPowerups.shield) {
+          // Scudo blocca il danno
           playerPowerups.shield = false;
           playerPowerups.shieldTime = 0;
           playSound('hit');
           triggerFlash(0.3);
           addImpactParticles(player.x, player.y, 10, 4);
-          addExplosion(meteors[j].x, meteors[j].y);
           meteors.splice(j, 1);
         } else {
+          playSound('hit');
+          player.hp--;
+          player.iFrames = 60;
+          screenShake = 8;
           addExplosion(meteors[j].x, meteors[j].y);
           meteors.splice(j, 1);
-          handlePlayerHit();
-          screenShake = 8;
         }
-        if (player.hp <= 0) return;
+
+        if (player.hp <= 0) {
+          if (lives > 0) {
+            // Usa una vita extra
+            lives--;
+            player.hp = player.maxHP;
+            player.iFrames = 120; // 2 secondi di invulnerabilità
+            screenShake = 10;
+            triggerFlash(0.4);
+            playSound('powerup');
+            addImpactParticles(player.x, player.y, 20, 5);
+          } else {
+            gameState = 'gameover';
+          }
+          return;
+        }
         break;
       }
     }
@@ -6408,12 +6239,28 @@ function update() {
           triggerFlash(0.3);
           addImpactParticles(player.x, player.y, 10, 4);
         } else {
-          handlePlayerHit();
+          playSound('hit');
+          player.hp--;
+          player.iFrames = 60;
           screenShake = 8;
+          addExplosion(enemies[j].x, enemies[j].y);
+          // Alert CRITICAL se HP basso
         }
-        addExplosion(enemies[j].x, enemies[j].y);
         enemies.splice(j, 1);
-        if (player.hp <= 0) return;
+        if (player.hp <= 0) {
+          if (lives > 0) {
+            lives--;
+            player.hp = player.maxHP;
+            player.iFrames = 120;
+            screenShake = 10;
+            triggerFlash(0.4);
+            playSound('powerup');
+            addImpactParticles(player.x, player.y, 20, 5);
+          } else {
+            gameState = 'gameover';
+          }
+          return;
+        }
         break;
       }
     }
@@ -6425,16 +6272,32 @@ function update() {
       if (collides(player.x, player.y, 8, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].size)) {
         enemyBullets.splice(i, 1);
         if (playerPowerups.shield) {
+          // Scudo blocca il danno
           playerPowerups.shield = false;
           playerPowerups.shieldTime = 0;
           playSound('hit');
           triggerFlash(0.2);
           addImpactParticles(player.x, player.y, 6, 3);
         } else {
-          handlePlayerHit();
+          playSound('hit');
+          player.hp--;
+          player.iFrames = 60;
           screenShake = 8;
         }
-        if (player.hp <= 0) return;
+        if (player.hp <= 0) {
+          if (lives > 0) {
+            lives--;
+            player.hp = player.maxHP;
+            player.iFrames = 120;
+            screenShake = 10;
+            triggerFlash(0.4);
+            playSound('powerup');
+            addImpactParticles(player.x, player.y, 20, 5);
+          } else {
+            gameState = 'gameover';
+          }
+          return;
+        }
         break;
       }
     }
@@ -6443,111 +6306,63 @@ function update() {
   // Boss AI
   if (boss.active) bossAI();
 
-  // Combo timer
-  updateCombo();
+  // Wave management - onde più lunghe con difficoltà crescente
+  const waveDuration = 800 + wave * 100; // Raddoppiato: dura il doppio
+  const meteorSpawnRate = Math.max(20, 40 - wave * 2); // Meteore più frequenti
+  const enemySpawnRate = Math.max(130, 300 - wave * 25); // Ridotto del 40%
 
-  // HP Regen (ogni 20 secondi con upgrade)
-  if (upgrades.hpRegen > 0 && player.hp < player.maxHP) {
-    hpRegenTimer++;
-    if (hpRegenTimer >= 1200 / upgrades.hpRegen) { // 20s / livello
-      hpRegenTimer = 0;
-      player.hp = Math.min(player.maxHP, player.hp + 1);
-      addFloatingNotification('health', player.x, player.y - 20);
-    }
-  }
-
-  // Wave management - con tipi di wave speciali
-  const waveDuration = 800 + wave * 100;
-  const meteorSpawnRate = Math.max(20, 40 - wave * 2);
-  const enemySpawnRate = Math.max(130, 300 - wave * 25);
-
-  // Determina tipo di wave
-  if (waveTimer === 0 && !boss.active && !boss.defeated) {
-    waveType = determineWaveType();
-  }
-
-  if (!boss.active && !boss.defeated && !upgradeSelectionActive) {
+  if (!boss.active && !boss.defeated) {
     waveTimer++;
 
-    // === WAVE SPECIALE: SWARM ===
-    if (waveType === 'swarm') {
-      meteorTimer++;
-      if (meteorTimer >= meteorSpawnRate * 2) { // Meno meteore
-        meteorTimer = 0;
-        spawnMeteor();
-        if (wave >= 3 && Math.random() < 0.1) spawnMeteor('massive');
-      }
-      // Più nemici, più spesso
-      if (waveTimer % Math.max(60, enemySpawnRate / 2) === 0 && waveTimer < waveDuration - 60) {
-        const availableTypes = ['drone', 'chaser'];
-        if (wave >= 4) availableTypes.push('sentry');
-        if (wave >= 5) availableTypes.push('bomber');
-        for (let i = 0; i < 3; i++) {
-          spawnEnemy(availableTypes[Math.floor(Math.random() * availableTypes.length)]);
-        }
-      }
-    }
-    // === WAVE SPECIALE: ASTEROID STORM ===
-    else if (waveType === 'asteroid_storm') {
-      meteorTimer++;
-      if (meteorTimer >= Math.max(10, meteorSpawnRate / 2)) { // Molte più meteore
-        meteorTimer = 0;
-        spawnMeteor();
-        if (Math.random() < 0.3) spawnMeteor();
-        if (wave >= 3 && Math.random() < 0.25) spawnMeteor('massive');
-        if (wave >= 2 && Math.random() < 0.15) spawnMeteor('shield');
-      }
-      // Pochi nemici
-      if (waveTimer % (enemySpawnRate * 2) === 0 && waveTimer < waveDuration - 60) {
-        spawnEnemy('drone');
-      }
-    }
-    // === WAVE SPECIALE: BONUS ===
-    else if (waveType === 'bonus') {
-      // Niente meteore, solo power-up e pochi nemici deboli
-      if (waveTimer % 120 === 0 && waveTimer < waveDuration - 60) {
-        spawnEnemy('drone');
-      }
-      // Più power-up
-      if (waveTimer % 180 === 0) {
-        spawnPowerup();
-      }
-      // Breve durata
-      if (waveTimer > waveDuration * 0.6) {
-        startBoss();
-      }
-    }
-    // === WAVE NORMALE ===
-    else {
-      meteorTimer++;
-      if (meteorTimer >= meteorSpawnRate) {
-        meteorTimer = 0;
-        spawnMeteor();
+    // Spawn meteore
+    meteorTimer++;
+    if (meteorTimer >= meteorSpawnRate) {
+      meteorTimer = 0;
+      spawnMeteor();
 
-        if (wave >= 3 && Math.random() < 0.15) spawnMeteor('massive');
-        if (wave >= 2 && Math.random() < 0.08) spawnMeteor('shield');
-        if (wave >= 3 && Math.random() < 0.3) spawnMeteor();
-        if (wave >= 6 && Math.random() < 0.2) spawnMeteor();
+      // Meteorite massiccia occasionale (dalla wave 3)
+      if (wave >= 3 && Math.random() < 0.15) {
+        spawnMeteor('massive');
       }
 
-      if (waveTimer % enemySpawnRate === 0 && waveTimer < waveDuration - 60) {
-        const availableTypes = ['drone'];
-        if (wave >= 2) availableTypes.push('chaser');
-        if (wave >= 4) availableTypes.push('sentry');
-        if (wave >= 5) availableTypes.push('bomber');
+      // Meteorite scudo occasionale (dalla wave 2)
+      if (wave >= 2 && Math.random() < 0.08) {
+        spawnMeteor('shield');
+      }
+
+      // Meteore extra nelle wave avanzate
+      if (wave >= 3 && Math.random() < 0.3) {
+        spawnMeteor();
+      }
+      if (wave >= 6 && Math.random() < 0.2) {
+        spawnMeteor();
+      }
+    }
+
+    // Spawn nemici aggiuntivi (solo durante la wave, non durante il boss)
+    if (waveTimer % enemySpawnRate === 0 && waveTimer < waveDuration - 60) {
+      // Tipi di nemici in base alla wave
+      const availableTypes = ['drone']; // Wave 1-2: solo drone
+
+      if (wave >= 2) availableTypes.push('chaser'); // Wave 2+: chaser
+      if (wave >= 4) availableTypes.push('sentry'); // Wave 4+: sentry
+      if (wave >= 5) availableTypes.push('bomber'); // Wave 5+: bomber
+
+      // Scegli tipo casuale
+      const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
+      spawnEnemy(type);
+
+      // Nemici extra nelle wave più alte
+      if (wave >= 4 && Math.random() < 0.3) {
         spawnEnemy(availableTypes[Math.floor(Math.random() * availableTypes.length)]);
-        if (wave >= 4 && Math.random() < 0.3) {
-          spawnEnemy(availableTypes[Math.floor(Math.random() * availableTypes.length)]);
-        }
       }
     }
 
-    // Fine wave - spawn boss (non per wave bonus)
-    if (waveTimer > waveDuration && waveType !== 'bonus') {
+    // Fine wave - spawn boss
+    if (waveTimer > waveDuration) {
       startBoss();
     }
   }
-
   if (boss.defeated) {
     waveTimer++;
     if (waveTimer > 180) {
@@ -6613,21 +6428,19 @@ function render() {
     drawBossHead(boss.x, boss.y, boss.phase, boss.hp, boss.maxHP, boss.attacking, frame, boss.type);
   }
 
-  // Enemy bullets - trail solo ogni 3 frame per performance
-  const addTrail = frame % 3 === 0;
+  // Enemy bullets
   for (const b of enemyBullets) {
     drawEnemyBullet(b.x, b.y, b.size, b.color, b.type);
-    if (addTrail) addEnemyBulletTrail(b.x, b.y);
+    addEnemyBulletTrail(b.x, b.y);
   }
 
   // Scia proiettili giocatore
   drawBulletTrails();
 
-  // Player bullets - trail ogni 2 frame
-  const addPlayerTrail = frame % 2 === 0;
+  // Player bullets
   for (const b of bullets) {
     drawProjectile(b.x, b.y);
-    if (addPlayerTrail) addBulletTrail(b.x, b.y);
+    addBulletTrail(b.x, b.y);
   }
 
   // Engine particles
@@ -6670,9 +6483,9 @@ function render() {
     } else if (p.type === 'spark') {
       ctx.fillStyle = p.color;
       ctx.shadowColor = '#fff';
-      ctx.shadowBlur = Math.min(3, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 3;
       ctx.fillRect(Math.floor(p.x) - 1, Math.floor(p.y) - 1, 2, 2);
-      ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
     } else if (p.type === 'impact') {
       ctx.fillStyle = p.color;
       ctx.fillRect(Math.floor(p.x - p.size/2), Math.floor(p.y - p.size/2), Math.ceil(p.size), Math.ceil(p.size));
@@ -6706,64 +6519,8 @@ function render() {
   // Powerup status
   drawPowerupStatus();
 
-  // Upgrade selection screen
-  if (upgradeSelectionActive && availableUpgrades.length > 0) {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(0, 0, GAME_W, GAME_H);
-
-    ctx.fillStyle = '#fff';
-    ctx.font = '12px "Press Start 2P", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('UPGRADE!', GAME_W/2, 100);
-
-    ctx.font = '8px "Press Start 2P", monospace';
-    ctx.fillStyle = '#888';
-    ctx.fillText('SCEGLI UN POTENZIAMENTO', GAME_W/2, 130);
-
-    for (let i = 0; i < availableUpgrades.length; i++) {
-      const u = availableUpgrades[i];
-      const currentLevel = upgrades[u.key];
-      const yPos = 180 + i * 110;
-      const isSelected = selectedUpgrade === i;
-
-      // Box
-      ctx.strokeStyle = isSelected ? '#fff' : '#555';
-      ctx.lineWidth = isSelected ? 3 : 1;
-      ctx.strokeRect(40, yPos - 15, GAME_W - 80, 90);
-
-      // Icon + name
-      ctx.fillStyle = isSelected ? '#fff' : '#aaa';
-      ctx.font = '14px "Press Start 2P", monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(u.icon, GAME_W/2 - 80, yPos + 8);
-
-      ctx.font = '8px "Press Start 2P", monospace';
-      ctx.fillText(u.name, GAME_W/2 + 10, yPos + 5);
-
-      ctx.fillStyle = '#666';
-      ctx.font = '6px "Press Start 2P", monospace';
-      ctx.fillText(u.desc, GAME_W/2 + 10, yPos + 20);
-
-      // Level bar
-      ctx.fillStyle = '#444';
-      ctx.fillRect(GAME_W/2 - 30, yPos + 35, 60, 6);
-      ctx.fillStyle = '#0f0';
-      ctx.fillRect(GAME_W/2 - 30, yPos + 35, 60 * (currentLevel / u.max), 6);
-
-      ctx.fillStyle = '#888';
-      ctx.font = '6px "Press Start 2P", monospace';
-      ctx.fillText(currentLevel + '/' + u.max, GAME_W/2, yPos + 55);
-
-      // Key hint
-      ctx.fillStyle = '#555';
-      ctx.fillText('[ ' + (i + 1) + ' ]', GAME_W/2, yPos + 68);
-    }
-
-    ctx.textAlign = 'left';
-  }
-
-  // Highscore (usa cache invece di localStorage ogni frame)
-  const hs = cachedHighscore;
+  // Highscore
+  const hs = getHighscore();
   if (hs > 0) {
     ctx.fillStyle = '#666';
     ctx.font = '6px "Press Start 2P", monospace';
@@ -6784,16 +6541,9 @@ function render() {
     ctx.font = '14px "Press Start 2P", monospace';
     ctx.textAlign = 'center';
     ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
-    ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 10;
     ctx.globalAlpha = Math.min(1, waveTimer / 15) * Math.min(1, (90 - waveTimer) / 30);
     ctx.fillText('WAVE ' + wave, 0, 0);
-    // Sottotitolo tipo di wave
-    if (waveType !== 'normal') {
-      const waveLabels = { swarm: 'SWARM!', asteroid_storm: 'STORM!', bonus: 'BONUS!' };
-      ctx.font = '8px "Press Start 2P", monospace';
-      ctx.fillStyle = waveType === 'bonus' ? '#ff0' : '#0f0';
-      ctx.fillText(waveLabels[waveType] || '', 0, 20);
-    }
     ctx.restore();
   }
 
@@ -6897,7 +6647,7 @@ function render() {
       ctx.font = '24px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
       ctx.shadowColor = '#fff';
-      ctx.shadowBlur = Math.min(20, MAX_SHADOW_BLUR) + Math.random() * 10;
+      ctx.shadowBlur = 20 + Math.random() * 10;
 
       // Flicker rapido come nei vecchi giochi
       const rapidFlicker = Math.random() < 0.3 ? 0.4 : 1;
@@ -6919,7 +6669,7 @@ function render() {
         if (bossWarningState.subtext && bossWarningState.timer > 30) {
           ctx.font = '10px "Press Start 2P", monospace';
           ctx.globalAlpha = flickerIntensity * 0.8;
-          ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+          ctx.shadowBlur = 5;
           ctx.fillText(bossWarningState.subtext, baseX, baseY + 25);
         }
       }
@@ -6942,7 +6692,7 @@ function render() {
     // Per glitch, occasionalmente il testo diventa rosso (simulato in grayscale)
     if (isGlitch && Math.random() < 0.15) {
       brightness = '#666';
-      ctx.shadowBlur = Math.min(25, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 25;
     }
 
     ctx.fillStyle = brightness;
@@ -6965,7 +6715,7 @@ function render() {
       ctx.font = isGlitch ? '9px "Press Start 2P", monospace' : '10px "Press Start 2P", monospace';
       ctx.fillStyle = '#fff';
       ctx.globalAlpha = flickerIntensity * (0.7 + Math.random() * 0.3);
-      ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR) + Math.random() * 5;
+      ctx.shadowBlur = 10 + Math.random() * 5;
 
       // Testo con cursore lampeggiante
       let displayText = bossWarningState.fullText;
@@ -7008,7 +6758,7 @@ function render() {
       if (isGlitch) {
         // Colore più sinistro per glitch
         ctx.fillStyle = Math.random() < 0.3 ? '#666' : '#aaa';
-        ctx.shadowBlur = Math.min(8, MAX_SHADOW_BLUR);
+        ctx.shadowBlur = 8;
 
         // Effetto testo "corrotto"
         if (Math.random() < 0.2) {
@@ -7018,7 +6768,7 @@ function render() {
         }
       } else {
         ctx.fillStyle = '#aaa';
-        ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+        ctx.shadowBlur = 5;
         ctx.fillText(subText + (showSubCursor && bossWarningState.subtextProgress < bossWarningState.subtext.length ? '_' : ''), baseX, baseY + 30);
       }
     }
@@ -7029,7 +6779,7 @@ function render() {
       ctx.font = '8px "Press Start 2P", monospace';
       ctx.fillStyle = '#aaa';
       ctx.globalAlpha = flickerIntensity * 0.8;
-      ctx.shadowBlur = Math.min(5, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 5;
 
       // Flicker più intenso per il nome
       if (Math.random() < (isGlitch ? 0.5 : 0.4)) {
@@ -7088,13 +6838,13 @@ function render() {
       ctx.globalAlpha = 0.7 + Math.random() * 0.3;
       ctx.textAlign = 'center';
       ctx.shadowColor = '#fff';
-      ctx.shadowBlur = Math.min(10, MAX_SHADOW_BLUR);
+      ctx.shadowBlur = 10;
       ctx.fillText('BOSS INCOMING', GAME_W/2, GAME_H - 60);
     }
 
     ctx.restore();
     ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
   }
   if (boss.enterDone) {
     bossIntro = false;
@@ -7141,7 +6891,7 @@ function drawIntro() {
     const flash = introTimer < 30 ? (Math.sin(introTimer * 0.3) * 0.3 + 0.7) : 1;
     ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
     ctx.shadowColor = '#fff';
-    ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR);
+    ctx.shadowBlur = 15;
 
     // "IL GIGANTE"
     ctx.fillText('IL GIGANTE', GAME_W / 2, GAME_H / 2 - 20);
@@ -7149,7 +6899,7 @@ function drawIntro() {
     // "DELLE STELLE"
     ctx.fillText('DELLE STELLE', GAME_W / 2, GAME_H / 2 + 20);
 
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     // Sottotitolo dopo un po'
     if (introTimer > 60) {
@@ -7214,12 +6964,6 @@ function drawIntro() {
 }
 
 function gameLoop() {
-  const now = performance.now();
-  const rawDt = now - lastFrameTime;
-  lastFrameTime = now;
-  // Normalizza a 60fps (16.67ms per frame). Cap a 3x per evitare salti enormi
-  const dt = Math.min(rawDt / 16.667, 3);
-
   if (gameState === 'intro') {
     // Intro boot sequence
     drawIntro();
@@ -7233,34 +6977,13 @@ function gameLoop() {
       showIOSHint();
     }
   } else if (gameState === 'playing') {
-    if (upgradeSelectionActive) {
-      render(); // Mostra la UI di selezione ma non aggiorna il gioco
-    } else {
-      update();
-      render();
-    }
+    update();
+    render();
   } else if (gameState === 'paused') {
     // Gioco in pausa - mostra schermata pause
     render(); // Continua a renderizzare
     drawPauseScreen();
     pausedTime++;
-  } else if (gameState === 'gameover') {
-    // Gestione game over integrata nel game loop (no loop separato)
-    if (!gameOverHandled) {
-      gameOverHandled = true;
-      try {
-        stopBossMusic();
-        playSound('explosion');
-        playMusicTrack('menu');
-      } catch(e) {}
-      saveHighscore();
-      refreshHighscore();
-      const isNewRecord = score >= cachedHighscore;
-      document.getElementById('goTitle').textContent = isNewRecord ? 'NEW RECORD!' : 'GAME OVER';
-      document.getElementById('goScore').textContent = 'SCORE: ' + String(score).padStart(6,'0') + '  |  WAVE: ' + wave + '  |  BEST: ' + String(cachedHighscore).padStart(6,'0');
-      gameOverScreen.style.display = 'flex';
-      musicToggle.style.display = 'none';
-    }
   }
   requestAnimationFrame(gameLoop);
 }
@@ -7275,13 +6998,13 @@ function drawPauseScreen() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.shadowColor = '#fff';
-  ctx.shadowBlur = Math.min(15, MAX_SHADOW_BLUR);
+  ctx.shadowBlur = 15;
 
   const blinkAlpha = Math.sin(pausedTime * 0.1) * 0.3 + 0.7;
   ctx.globalAlpha = blinkAlpha;
   ctx.fillText('PAUSA', GAME_W / 2, GAME_H / 2 - 40);
   ctx.globalAlpha = 1;
-  ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
 
   // Statistiche
   ctx.font = '10px "Press Start 2P", monospace';
@@ -7311,7 +7034,6 @@ function startGame() {
   startScreen.style.display = 'none';
   gameOverScreen.style.display = 'none';
   resetGame();
-  refreshHighscore();
   gameState = 'playing';
 }
 
@@ -7348,17 +7070,14 @@ function startMenuMusic() {
 // Avvia musica menu quando la pagina carica
 document.addEventListener('DOMContentLoaded', () => {
   // Mostra highscore all'avvio
-  refreshHighscore();
   try {
+    const hs = getHighscore();
     const display = document.getElementById('highscoreDisplay');
-    if (display && cachedHighscore > 0) {
-      display.textContent = 'HIGHSCORE: ' + String(cachedHighscore).padStart(6, '0');
+    if (display && hs > 0) {
+      display.textContent = 'HIGHSCORE: ' + String(hs).padStart(6, '0');
     }
   } catch(e) {}
 });
-
-// Dismiss button per iOS (rimosso onclick inline)
-document.getElementById('dismissBtn').addEventListener('click', dismissIOSInstall);
 
 // Avvia musica menu al primo click/tap
 let menuMusicStarted = false;
@@ -7418,15 +7137,35 @@ gameOverScreen.addEventListener('click', startGame);
 gameOverScreen.addEventListener('touchstart', function(e) { e.preventDefault(); startGame(); });
 
 // Watch for game over
+function checkGameOver() {
+  if (gameState === 'gameover') {
+    try {
+      stopBossMusic();
+      playSound('explosion');
+      // Avvia musica game over (usa menu music come fallback)
+      playMusicTrack('menu');
+    } catch(e) {}
+    saveHighscore();
+    const hs = getHighscore();
+    const isNewRecord = score >= hs;
+    document.getElementById('goTitle').textContent = isNewRecord ? 'NEW RECORD!' : 'GAME OVER';
+    document.getElementById('goScore').textContent = 'SCORE: ' + String(score).padStart(6,'0') + '  |  WAVE: ' + wave + '  |  BEST: ' + String(hs).padStart(6,'0');
+    gameOverScreen.style.display = 'flex';
+    musicToggle.style.display = 'none';
+  }
+  requestAnimationFrame(checkGameOver);
+}
+
 gameLoop();
+checkGameOver();
 
 // Mostra highscore all'avvio
-refreshHighscore();
 (function() {
   try {
+    const hs = getHighscore();
     const display = document.getElementById('highscoreDisplay');
-    if (display && cachedHighscore > 0) {
-      display.textContent = 'HIGHSCORE: ' + String(cachedHighscore).padStart(6, '0');
+    if (display && hs > 0) {
+      display.textContent = 'HIGHSCORE: ' + String(hs).padStart(6, '0');
     }
   } catch(e) {}
 })();

@@ -12,8 +12,10 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 <title>Il Gigante di Stelle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     width: 100%; height: 100%; overflow: hidden;
@@ -203,12 +205,14 @@ let hasShownIOSInstructions = localStorage.getItem('iosInstallShown') === 'true'
 
 function showIOSInstallScreen() {
   if (isIOS && !isStandalone && !hasShownIOSInstructions) {
-    document.getElementById('iosInstallScreen').style.display = 'flex';
+    var el = document.getElementById('iosInstallScreen');
+    if (el) el.style.display = 'flex';
   }
 }
 
 function dismissIOSInstall() {
-  document.getElementById('iosInstallScreen').style.display = 'none';
+  var el = document.getElementById('iosInstallScreen');
+  if (el) el.style.display = 'none';
   localStorage.setItem('iosInstallShown', 'true');
   hasShownIOSInstructions = true;
 }
@@ -216,7 +220,8 @@ function dismissIOSInstall() {
 // Mostra hint iOS nella schermata start
 function showIOSHint() {
   if (isIOS && !isStandalone) {
-    document.getElementById('iosHint').style.display = 'block';
+    var el = document.getElementById('iosHint');
+    if (el) el.style.display = 'block';
   }
 }
 
@@ -261,6 +266,195 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+
+// === OBJECT POOLING SYSTEM ===
+// Pool generico riutilizzabile - evita garbage collection da .filter()
+function createPool(maxSize, factory) {
+  const items = new Array(maxSize);
+  let count = 0;
+  for (let i = 0; i < maxSize; i++) {
+    items[i] = factory();
+  }
+  return {
+    items,
+    get count() { return count; },
+    alloc() {
+      if (count < maxSize) return items[count++];
+      return null; // Pool pieno
+    },
+    release(index) {
+      if (index < count - 1) {
+        const temp = items[index];
+        items[index] = items[count - 1];
+        items[count - 1] = temp;
+      }
+      count--;
+    },
+    compact(testFn) {
+      // Rimuovi elementi che non superano il test, in-place
+      let write = 0;
+      for (let read = 0; read < count; read++) {
+        if (testFn(items[read], read)) {
+          if (write !== read) {
+            const temp = items[write];
+            items[write] = items[read];
+            items[read] = temp;
+          }
+          write++;
+        }
+      }
+      count = write;
+    },
+    clear() { count = 0; },
+    forEach(fn) {
+      for (let i = 0; i < count; i++) fn(items[i], i);
+    },
+    loopReverse(fn) {
+      for (let i = count - 1; i >= 0; i--) fn(items[i], i);
+    }
+  };
+}
+
+// === GAME CONFIGURATION ===
+const CONFIG = {
+  PLAYER: {
+    speed: 4,
+    hp: 5,
+    maxHP: 5,
+    iFramesHit: 60,           // 1 secondo dopo essere colpito
+    iFramesLife: 120,          // 2 secondi dopo usare vita extra
+    fireCDNormal: 8,           // Cooldown sparo normale (frame)
+    fireCDDouble: 6,           // Cooldown sparo doppio (frame)
+    bulletSpeed: -7,           // Velocita proiettile giocatore (negativo = verso su)
+    bulletOffsetX: 8,          // Offset orizzontale per doppio sparo
+    bulletOffsetY: -16,        // Offset verticale partenza proiettile
+    size: 10,                  // Raggio collisione giocatore
+    bulletSize: 3,             // Raggio collisione proiettile giocatore
+    minX: 20,
+    maxX: GAME_W - 20,
+    minY: 60,
+    maxY: GAME_H - 30,
+    touchDeadzone: 5,          // Deadzone touch in pixel
+    touchYOffset: 30,         // Offset Y per touch
+  },
+  ENEMIES: {
+    drone:    { hp: 2, size: 18, fireRate: 90,  points: 25, chaseSpeed: 0 },
+    chaser:   { hp: 2, size: 16, fireRate: 999, points: 20, chaseSpeed: 0.03 },
+    sentry:   { hp: 4, size: 25, fireRate: 40,  points: 40, chaseSpeed: 0 },
+    bomber:   { hp: 6, size: 32, fireRate: 120, points: 50, chaseSpeed: 0 },
+    sentryMaxBurst: 3,
+    // Wave unlock schedule
+    unlockWave: { chaser: 2, sentry: 4, bomber: 5 },
+  },
+  BOSSES: {
+    baseHP: [80, 100, 90, 110, 96, 120, 104, 116, 130, 240],
+    waveScaling: 16,           // HP extra per wave
+    phaseThreshold2: 0.6,     // Fase 2 sotto 60% HP
+    phaseThreshold3: 0.3,      // Fase 3 sotto 30% HP
+    damagePerBullet: 2,        // Danno per proiettile giocatore
+    scorePerHit: 5,            // Score per hit sul boss
+    collisionRadius: 70,       // Raggio collisione boss
+    defeatBaseScore: 500,      // Moltiplicatore score sconfitta (x wave)
+    boss2TargetY: 280,         // Boss 2 ha sprite piu alto
+  },
+  WAVES: {
+    baseDuration: 800,         // Frame base durata wave
+    durationPerWave: 100,      // Frame extra per wave
+    meteorSpawnBase: 40,       // Rate base spawn meteore
+    meteorSpawnReduction: 2,   // Riduzione per wave
+    meteorSpawnMin: 20,        // Minimo rate spawn
+    enemySpawnBase: 300,       // Rate base spawn nemici
+    enemySpawnReduction: 25,   // Riduzione per wave
+    enemySpawnMin: 130,        // Minimo rate spawn
+    enemySpawnBuffer: 60,      // Smetti di spawnare N frame prima della fine
+    postBossCooldown: 180,     // Frame di pausa dopo sconfitta boss
+    extraLifeEvery: 5,         // Vita extra ogni N wave
+    // Meteor variants
+    massiveWave: 3,
+    massiveChance: 0.15,
+    shieldWave: 2,
+    shieldChance: 0.08,
+    extraMeteorWave: 3,
+    extraMeteorChance: 0.3,
+    extraMeteor2Wave: 6,
+    extraMeteor2Chance: 0.2,
+    extraEnemyWave: 4,
+    extraEnemyChance: 0.3,
+  },
+  POWERUPS: {
+    types: ['shield', 'double', 'bomb'],
+    shieldDuration: 600,       // 10 secondi a 60fps
+    doubleDuration: 1200,     // 20 secondi a 60fps
+    spawnChance: 0.002,        // Probabilita spawn per frame
+    maxOnScreen: 2,
+    fallSpeed: 1.5,
+    bounceVY: -0.5,           // Rimbalzo extra su nemico
+    bounceVXRange: 3,          // Range VX dopo rimbalzo
+    collisionRadius: 15,       // Raggio raccolta
+    bombBossDamage: 20,        // Danno bomba al boss
+  },
+  COLLISION: {
+    playerMeteor: 10,          // Raggio giocatore vs meteora
+    playerEnemy: 10,           // Raggio giocatore vs nemico
+    playerBullet: 8,           // Raggio giocatore vs proiettile nemico
+    playerPowerup: 15,         // Raggio giocatore vs powerup
+    bulletBoss: 3,             // Raggio proiettile vs boss
+    powerupEnemy: 15,          // Raggio powerup vs nemico (rimbalzo)
+  },
+  METEORS: {
+    normal: { sizeMin: 8, sizeMax: 16, vxRange: 1.5, vyMin: 1, vyMax: 2, rotVMax: 0.05 },
+    massive: { sizeMin: 30, sizeMax: 15, hp: 5, hpRange: 3, vxRange: 0.5, vyMin: 0.5, vyMax: 0.5, rotVMax: 0.02 },
+    shield: { sizeMin: 18, sizeMax: 8, hp: 3, vxRange: 1, vyMin: 0.8, vyMax: 0.8 },
+    normalHPDivisor: 8,        // hp = ceil(size / divisor)
+  },
+  EFFECTS: {
+    screenShakeDecay: 0.5,
+    screenFlashDecay: 0.02,
+    hitFlashDefault: 5,
+    hitFlashPowerup: 20,
+    hitFlashBossDefeat: 20,
+    hitFlashPlayerHit: 8,
+    hitFlashLife: 10,
+    damageNumberLife: 40,
+    damageNumberVY: -1.5,
+    // Explosion params
+    explosionMaxT: 25,
+    explosionDebrisCount: 15,
+    explosionSmokeCount: 6,
+    explosionSparkCount: 8,
+    // Engine particles
+    engineLife: 20,
+    engineLifeRange: 10,
+    engineSize: 2,
+    engineSizeRange: 2,
+    // Boss sparks
+    bossSparkCount: 8,
+    // Bullet trails
+    trailLife: 6,
+    trailMaxLife: 6,
+    trailSize: 3,
+    // Speed lines per boss hit
+    speedLinesPerHit: 3,
+  },
+  PERFORMANCE: {
+    maxParticles: 500,
+    maxBullets: 100,
+    maxEnemyBullets: 200,
+    maxTrails: 200,
+    maxEngineParticles: 50,
+    maxExplosions: 30,
+    maxDamageNumbers: 20,
+    maxSpeedLines: 50,
+    maxShockwaves: 10,
+  }
+};
+
+// Pre-allocate pools (dopo CONFIG per poter referenziare i valori)
+const bulletPool = createPool(CONFIG.PERFORMANCE.maxBullets, () => ({ x:0, y:0, vy:0 }));
+const enemyBulletPool = createPool(CONFIG.PERFORMANCE.maxEnemyBullets, () => ({ x:0, y:0, vx:0, vy:0, size:3, type:'normal' }));
+const particlePool = createPool(CONFIG.PERFORMANCE.maxParticles, () => ({ x:0, y:0, vx:0, vy:0, life:0, maxLife:1, type:'spark', color:'#fff', size:2 }));
+const trailPool = createPool(CONFIG.PERFORMANCE.maxTrails, () => ({ x:0, y:0, life:0, maxLife:1, size:3, isEnemy:false }));
+const dmgNumPool = createPool(CONFIG.PERFORMANCE.maxDamageNumbers, () => ({ x:0, y:0, dmg:0, life:0, maxLife:1, vy:-1.5 }));
 
 // === AUDIO SYSTEM ===
 let audioCtx = null;
@@ -543,13 +737,20 @@ function addFloatingNotification(type, x, y) {
   });
 }
 
-function updateFloatingNotifications() {
-  floatingNotifications = floatingNotifications.filter(n => {
-    n.y += n.vy;
-    n.life--;
+function updateFloatingNotifications(dt) {
+  // Compattazione in-place
+  let write = 0;
+  for (let read = 0; read < floatingNotifications.length; read++) {
+    const n = floatingNotifications[read];
+    n.y += n.vy * dt;
+    n.life -= dt;
     n.alpha = n.life / n.maxLife;
-    return n.life > 0;
-  });
+    if (n.life > 0) {
+      if (write !== read) floatingNotifications[write] = n;
+      write++;
+    }
+  }
+  floatingNotifications.length = write;
 }
 
 function drawFloatingNotifications() {
@@ -623,9 +824,9 @@ function stopProceduralBossMusic() {
 
 // === POWER-UPS ===
 let powerups = [];
-const POWERUP_TYPES = ['shield', 'double', 'bomb'];
-const POWERUP_DURATION = 600; // 10 secondi a 60fps
-const DOUBLE_DURATION = 1200; // 20 secondi a 60fps
+const POWERUP_TYPES = CONFIG.POWERUPS.types;
+const POWERUP_DURATION = CONFIG.POWERUPS.shieldDuration;
+const DOUBLE_DURATION = CONFIG.POWERUPS.doubleDuration;
 
 let playerPowerups = {
   shield: false,
@@ -641,7 +842,7 @@ function spawnPowerup() {
     x: Math.random() * (GAME_W - 40) + 20,
     y: -20,
     vx: 0,
-    vy: 1.5,
+    vy: CONFIG.POWERUPS.fallSpeed,
     type: type,
     pulse: 0
   });
@@ -654,9 +855,11 @@ function drawPowerup(x, y, type, pulse) {
   const p = Math.sin(pulse * 0.1) * 0.2 + 1;
   ctx.scale(p, p);
 
-  // Glow
-  ctx.shadowColor = '#fff';
-  ctx.shadowBlur = 10;
+  // Glow - cerchio semi-trasparente invece di shadowBlur
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.beginPath();
+  ctx.arc(0, 0, 16, 0, Math.PI * 2);
+  ctx.fill();
 
   // Box
   ctx.strokeStyle = '#fff';
@@ -684,16 +887,16 @@ function drawPowerup(x, y, type, pulse) {
   ctx.restore();
 }
 
-function updatePowerups() {
+function updatePowerups(dt) {
   // Spawn occasionale
-  if (Math.random() < 0.002 && powerups.length < 2) {
+  if (Math.random() < CONFIG.POWERUPS.spawnChance && powerups.length < CONFIG.POWERUPS.maxOnScreen) {
     spawnPowerup();
   }
 
   // Aggiorna powerups
   powerups = powerups.filter(p => {
-    p.x += p.vx || 0;
-    p.y += p.vy;
+    p.x += (p.vx || 0) * dt;
+    p.y += p.vy * dt;
     p.pulse++;
     // Mantieni entro i bordi orizzontali
     if (p.x < 15) { p.x = 15; p.vx = Math.abs(p.vx || 0); }
@@ -705,10 +908,10 @@ function updatePowerups() {
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
     for (let j = enemies.length - 1; j >= 0; j--) {
-      if (collides(p.x, p.y, 15, enemies[j].x, enemies[j].y, enemies[j].size)) {
+      if (collides(p.x, p.y, CONFIG.COLLISION.powerupEnemy, enemies[j].x, enemies[j].y, enemies[j].size)) {
         // Rimbalza: inverte direzione verticale e aggiunge movimento orizzontale
-        p.vy = -Math.abs(p.vy) - 0.5;
-        p.vx = (Math.random() - 0.5) * 3;
+        p.vy = -Math.abs(p.vy) - CONFIG.POWERUPS.bounceVY;
+        p.vx = (Math.random() - 0.5) * CONFIG.POWERUPS.bounceVXRange;
         addImpactParticles(p.x, p.y, 3, 2);
         break;
       }
@@ -717,18 +920,18 @@ function updatePowerups() {
 
   // Aggiorna timer giocatore
   if (playerPowerups.shieldTime > 0) {
-    playerPowerups.shieldTime--;
+    playerPowerups.shieldTime -= dt;
     if (playerPowerups.shieldTime <= 0) playerPowerups.shield = false;
   }
   if (playerPowerups.doubleTime > 0) {
-    playerPowerups.doubleTime--;
+    playerPowerups.doubleTime -= dt;
     if (playerPowerups.doubleTime <= 0) playerPowerups.double = false;
   }
 
   // Collisione powerup-giocatore
   for (let i = powerups.length - 1; i >= 0; i--) {
     const p = powerups[i];
-    if (collides(player.x, player.y, 15, p.x, p.y, 15)) {
+    if (collides(player.x, player.y, CONFIG.COLLISION.playerPowerup, p.x, p.y, CONFIG.POWERUPS.collisionRadius)) {
       playSound('powerup');
       triggerFlash(0.2);
       addImpactParticles(p.x, p.y, 8, 4);
@@ -762,7 +965,7 @@ function updatePowerups() {
           }
           enemyBullets = [];
           if (boss.active) {
-            boss.hp -= 20;
+            boss.hp -= CONFIG.POWERUPS.bombBossDamage;
             addExplosion(boss.x, boss.y, 40);
             triggerFlash(0.3);
           }
@@ -800,11 +1003,11 @@ function updateBossPhases() {
   const hpRatio = boss.hp / boss.maxHP;
 
   // Fase 2: sotto 60% HP
-  if (hpRatio < 0.6 && hpRatio > 0.3) {
+  if (hpRatio < CONFIG.BOSSES.phaseThreshold2 && hpRatio > CONFIG.BOSSES.phaseThreshold3) {
     boss.phase = 1;
   }
   // Fase 3: sotto 30% HP
-  else if (hpRatio <= 0.3) {
+  else if (hpRatio <= CONFIG.BOSSES.phaseThreshold3) {
     boss.phase = 2;
   }
 }
@@ -891,7 +1094,7 @@ for (const src of boss3DamageFrames) {
 }
 
 let assetsLoaded = 0;
-const totalAssets = 8 + 12 + 5 + 5 + 3; // player, boss, projectile, meteors, meteorMassive, meteorShield, asteroidChunk + 12 boss2 + 5 boss3 + 3 boss3Damage + 4 enemy sprites
+const totalAssets = 7 + 4 + 12 + 5 + 3; // 7 sprite base (player, boss, projectile, meteors[0], meteorMassive, meteorShield, asteroidChunk) + 4 enemy + 12 boss2 + 5 boss3 + 3 boss3Damage
 
 function assetLoaded() {
   assetsLoaded++;
@@ -992,6 +1195,7 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
   const bob = Math.sin(frame * 0.02) * 4;
   ctx.translate(0, bob);
 
+  // === BOSS 2: Il Guardiano Oscuro ===
   if (bossType === 2) {
     // Boss2: 12 frame separati
     const animSpeed = attacking ? 0.15 : 0.08;
@@ -1071,8 +1275,8 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     const useDamageSprites = dmgRatio < 0.6;
     const spriteArray = useDamageSprites ? assets.boss3Damage : assets.boss3;
     const animSpeed = attacking ? 0.12 : 0.06;
-    const frameCount = useDamageSprites ? 3 : 5;
-    const currentFrame = Math.floor(frame * animSpeed) % frameCount;
+    const maxFrames = useDamageSprites ? 3 : 5;
+    const currentFrame = Math.floor(frameCount * animSpeed) % maxFrames;
 
     const currentImg = spriteArray[currentFrame];
     const hasSprite = currentImg && currentImg.complete && currentImg.naturalWidth > 0;
@@ -1376,23 +1580,6 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
     ctx.arc(0, 0, attacking ? 12 : 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Particelle di energia
-    if (frame % 3 === 0) {
-      const px = (Math.random() - 0.5) * 80;
-      const py = (Math.random() - 0.5) * 80;
-      particles.push({
-        x: boss.x + px,
-        y: boss.y + py,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        life: 15,
-        maxLife: 15,
-        type: 'spark',
-        color: '#fff',
-        size: 2
-      });
-    }
-
     // Danni visivi
     if (dmgRatio < 0.7) {
       ctx.strokeStyle = 'rgba(100, 80, 100, 0.5)';
@@ -1527,21 +1714,6 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.beginPath();
       ctx.arc(0, -25, 4 + Math.sin(time * 5) * 2, 0, Math.PI * 2);
       ctx.fill();
-    }
-
-    // Particelle arcane
-    if (frame % 4 < 2 && attacking) {
-      particles.push({
-        x: boss.x + (Math.random() - 0.5) * 100,
-        y: boss.y + (Math.random() - 0.5) * 60,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        life: 20,
-        maxLife: 20,
-        type: 'spark',
-        color: '#fff',
-        size: 3
-      });
     }
 
     // Danni visivi
@@ -1819,21 +1991,6 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.stroke();
     }
 
-    // Particelle di decadimento
-    if (frame % 5 === 0 && dmgRatio < 0.7) {
-      particles.push({
-        x: boss.x + (Math.random() - 0.5) * 60,
-        y: boss.y + (Math.random() - 0.5) * 60,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        life: 15 + Math.random() * 10,
-        maxLife: 25,
-        type: 'spark',
-        color: '#fff',
-        size: 2
-      });
-    }
-
     ctx.shadowBlur = 0;
     ctx.restore();
     return;
@@ -2014,20 +2171,6 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
       ctx.lineTo(8, 5);
       ctx.lineTo(0, -10);
       ctx.stroke();
-    }
-
-    // Particelle di polvere
-    if (frame % 8 === 0) {
-      particles.push({
-        x: boss.x + (Math.random() - 0.5) * 70,
-        y: boss.y + (Math.random() - 0.5) * 50,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: 0.5 + Math.random() * 0.5,
-        life: 10 + Math.random() * 10,
-        maxLife: 20,
-        type: 'smoke',
-        size: 3 + Math.random() * 3
-      });
     }
 
     ctx.shadowBlur = 0;
@@ -2211,21 +2354,6 @@ function drawBossHead(x, y, phase, hp, maxHp, attacking, frame, bossType = 1) {
         ctx.lineTo(-50 + Math.random() * 100, -30 + Math.random() * 60);
         ctx.stroke();
       }
-    }
-
-    // Particelle cosmiche
-    if (frame % 3 === 0) {
-      particles.push({
-        x: boss.x + (Math.random() - 0.5) * 100,
-        y: boss.y + (Math.random() - 0.5) * 80,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        life: 15 + Math.random() * 15,
-        maxLife: 30,
-        type: 'spark',
-        color: '#fff',
-        size: 2 + Math.random() * 2
-      });
     }
 
     ctx.shadowBlur = 0;
@@ -2446,23 +2574,31 @@ function drawProjectile(x, y) {
   ctx.save();
 
   if (assets.projectile.complete && assets.projectile.naturalWidth > 0) {
-    // Effetto glow (grayscale)
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-    ctx.shadowBlur = 12;
+    // Glow leggero con cerchio semi-trasparente invece di shadowBlur
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x, y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
 
     const w = 16, h = 32;
     ctx.drawImage(assets.projectile, x - w/2, y - h/2, w, h);
 
     // Scia luminosa
     ctx.globalAlpha = 0.4;
-    ctx.shadowBlur = 20;
     ctx.drawImage(assets.projectile, x - w/2, y - h/2 + 8, w, h * 0.6);
     ctx.globalAlpha = 1;
   } else {
     // Fallback: proiettile procedurale (grayscale)
     ctx.fillStyle = '#fff';
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.9)';
-    ctx.shadowBlur = 10;
+
+    // Glow leggero
+    ctx.globalAlpha = 0.15;
+    ctx.beginPath();
+    ctx.arc(x, y, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
 
     // Nucleo luminoso
     ctx.beginPath();
@@ -2477,7 +2613,6 @@ function drawProjectile(x, y) {
     ctx.fillRect(x - 1.5, y + 2, 3, 10);
     ctx.globalAlpha = 1;
   }
-  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -2485,10 +2620,10 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
   ctx.save();
 
   if (type === 'crystal') {
-    // Proiettili cristallo - forma diamante
+    // Proiettili cristallo - forma diamante (glow tramite stroke, no shadowBlur)
     ctx.fillStyle = '#fff';
-    ctx.shadowColor = 'rgba(200, 220, 255, 0.9)';
-    ctx.shadowBlur = 10;
+    ctx.strokeStyle = 'rgba(200, 220, 255, 0.6)';
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(x, y - (size || 4));
     ctx.lineTo(x + (size || 4), y);
@@ -2507,9 +2642,7 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
     ctx.closePath();
     ctx.fill();
   } else if (type === 'solar') {
-    // Proiettili solari - forma stellare con flare
-    ctx.shadowColor = 'rgba(255, 200, 100, 0.9)';
-    ctx.shadowBlur = 12;
+    // Proiettili solari - forma stellare con flare (no shadowBlur)
 
     // Core luminoso
     ctx.fillStyle = '#fff';
@@ -2536,9 +2669,7 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
       ctx.stroke();
     }
   } else if (type === 'nebula') {
-    // Proiettili nebulosi - forma amorfa con alone
-    ctx.shadowColor = 'rgba(180, 180, 220, 0.8)';
-    ctx.shadowBlur = 15;
+    // Proiettili nebulosi - forma amorfa con alone (no shadowBlur)
 
     // Alone esterno
     ctx.fillStyle = 'rgba(150, 150, 180, 0.3)';
@@ -2568,9 +2699,7 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
     ctx.arc(x, y, (size || 4) * 0.5, 0, Math.PI * 2);
     ctx.fill();
   } else if (type === 'arcane') {
-    // Proiettili arcani - forma geometrica mistica
-    ctx.shadowColor = 'rgba(200, 200, 255, 0.9)';
-    ctx.shadowBlur = 15;
+    // Proiettili arcani - forma geometrica mistica (no shadowBlur)
 
     // Simbolo esterno (diamante con punte)
     ctx.strokeStyle = '#fff';
@@ -2607,9 +2736,7 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
       );
     }
   } else if (type === 'void') {
-    // Proiettili del vuoto - oscuri con alone di assorbimento
-    ctx.shadowColor = 'rgba(50, 50, 80, 0.9)';
-    ctx.shadowBlur = 15;
+    // Proiettili del vuoto - oscuri con alone di assorbimento (no shadowBlur)
 
     // Alone esterno distorto
     ctx.fillStyle = 'rgba(30, 30, 50, 0.5)';
@@ -2650,9 +2777,7 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
       ctx.fill();
     }
   } else if (type === 'stone') {
-    // Proiettili di pietra - massicci e irregolari
-    ctx.shadowColor = 'rgba(100, 100, 100, 0.7)';
-    ctx.shadowBlur = 5;
+    // Proiettili di pietra - massicci e irregolari (no shadowBlur)
 
     // Ombra
     ctx.fillStyle = 'rgba(50, 50, 50, 0.3)';
@@ -2692,16 +2817,19 @@ function drawEnemyBullet(x, y, size, color = '#888', type = 'normal') {
     ctx.lineTo(x + (size || 4) * 0.3, y - (size || 4) * 0.2);
     ctx.stroke();
   } else {
-    // Proiettili nemici normali in grayscale
+    // Proiettili nemici normali in grayscale (no shadowBlur)
     const brightness = color === '#f0f' ? 200 : 150;
     ctx.fillStyle = `rgb(${brightness}, ${brightness}, ${brightness})`;
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
-    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.arc(x, y, size || 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // Glow leggero con cerchio piu grande semi-trasparente
+    ctx.fillStyle = `rgba(255, 255, 255, 0.15)`;
+    ctx.beginPath();
+    ctx.arc(x, y, (size || 3) * 2, 0, Math.PI * 2);
+    ctx.fill();
   }
-  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -2720,19 +2848,31 @@ function addEngineParticle(x, y) {
   });
 }
 
+function updateEngineParticles(dt) {
+  for (const p of engineParticles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.life -= dt;
+  }
+  // Compattazione in-place engineParticles
+  {
+    let write = 0;
+    for (let read = 0; read < engineParticles.length; read++) {
+      if (engineParticles[read].life > 0) {
+        if (write !== read) engineParticles[write] = engineParticles[read];
+        write++;
+      }
+    }
+    engineParticles.length = write;
+  }
+}
+
 function drawEngineParticles() {
   for (const p of engineParticles) {
     const alpha = p.life / p.maxLife;
     ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowBlur = 4;
     ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size);
-    p.x += p.vx;
-    p.y += p.vy;
-    p.life--;
   }
-  ctx.shadowBlur = 0;
-  engineParticles = engineParticles.filter(p => p.life > 0);
 }
 
 // Scintille quando il boss viene colpito (grayscale)
@@ -2752,21 +2892,35 @@ function addBossSparks(x, y) {
   }
 }
 
-// Numeri di danno fluttuanti (grayscale)
-let damageNumbers = [];
-
+// Numeri di danno fluttuanti (usando pool)
 function addDamageNumber(x, y, dmg) {
-  damageNumbers.push({
-    x, y,
-    dmg,
-    life: 40,
-    maxLife: 40,
-    vy: -1.5
-  });
+  const d = dmgNumPool.alloc();
+  if (!d) return;
+  d.x = x; d.y = y; d.dmg = dmg;
+  d.life = CONFIG.EFFECTS.damageNumberLife;
+  d.maxLife = CONFIG.EFFECTS.damageNumberLife;
+  d.vy = CONFIG.EFFECTS.damageNumberVY;
+}
+
+function updateDamageNumbers(dt) {
+  let write = 0;
+  for (let read = 0; read < dmgNumPool.count; read++) {
+    const d = dmgNumPool.items[read];
+    d.y += d.vy * dt;
+    d.life -= dt;
+    if (d.life > 0) {
+      if (write !== read) {
+        dmgNumPool.items[write] = d;
+      }
+      write++;
+    }
+  }
+  dmgNumPool.count = write;
+  ctx.shadowBlur = 0;
 }
 
 function drawDamageNumbers() {
-  for (const d of damageNumbers) {
+  dmgNumPool.forEach((d, i) => {
     const alpha = d.life / d.maxLife;
     const scale = 1 + (1 - d.life / d.maxLife) * 0.5;
     ctx.save();
@@ -2779,11 +2933,8 @@ function drawDamageNumbers() {
     ctx.shadowBlur = 6;
     ctx.fillText('+' + d.dmg, 0, 0);
     ctx.restore();
-    d.y += d.vy;
-    d.life--;
-  }
+  });
   ctx.shadowBlur = 0;
-  damageNumbers = damageNumbers.filter(d => d.life > 0);
 }
 
 // Onde d'urto (grayscale)
@@ -2802,10 +2953,7 @@ function drawShockwaves() {
     ctx.arc(s.x, s.y, s.r * 0.8, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
-    s.r += 5;
-    s.alpha -= 0.02;
   }
-  shockwaves = shockwaves.filter(s => s.r < s.maxR);
 }
 
 // --- EFFETTI PIXEL ART BIANCO E NERO ---
@@ -2863,51 +3011,63 @@ function addImpactParticles(x, y, count = 8, size = 3) {
   }
 }
 
-// Scia del proiettile giocatore
-let bulletTrails = [];
+// Scia del proiettile giocatore (usando pool)
 function addBulletTrail(x, y) {
-  bulletTrails.push({
-    x, y,
-    life: 8,
-    maxLife: 8,
-    size: 4 + Math.random() * 2
+  const t = trailPool.alloc();
+  if (!t) return;
+  t.x = x; t.y = y;
+  t.life = 8; t.maxLife = 8;
+  t.size = 4 + Math.random() * 2;
+  t.isEnemy = false;
+}
+
+function updateBulletTrails(dt) {
+  trailPool.forEach((t, i) => {
+    if (t.isEnemy) return;
+    t.life -= dt;
+    t.size -= 0.3 * dt;
   });
+  trailPool.compact(t => t.isEnemy || t.life > 0);
 }
 
 function drawBulletTrails() {
-  for (const t of bulletTrails) {
+  trailPool.forEach((t, i) => {
+    if (t.isEnemy) return;
     const alpha = t.life / t.maxLife;
     ctx.globalAlpha = alpha * 0.3;
     ctx.fillStyle = '#fff';
     ctx.fillRect(t.x - t.size/2, t.y - t.size/2, t.size, t.size);
-    t.life--;
-    t.size -= 0.3;
-  }
+  });
   ctx.globalAlpha = 1;
-  bulletTrails = bulletTrails.filter(t => t.life > 0);
 }
 
-// Scia del proiettile nemico
-let enemyBulletTrails = [];
+// Scia del proiettile nemico (usando pool)
 function addEnemyBulletTrail(x, y) {
-  enemyBulletTrails.push({
-    x, y,
-    life: 6,
-    maxLife: 6,
-    size: 2 + Math.random() * 2
+  const t = trailPool.alloc();
+  if (!t) return;
+  t.x = x; t.y = y;
+  t.life = 6; t.maxLife = 6;
+  t.size = 2 + Math.random() * 2;
+  t.isEnemy = true;
+}
+
+function updateEnemyBulletTrails(dt) {
+  trailPool.forEach((t, i) => {
+    if (!t.isEnemy) return;
+    t.life -= dt;
   });
+  trailPool.compact(t => !t.isEnemy || t.life > 0);
 }
 
 function drawEnemyBulletTrails() {
-  for (const t of enemyBulletTrails) {
+  trailPool.forEach((t, i) => {
+    if (!t.isEnemy) return;
     const alpha = t.life / t.maxLife;
     ctx.globalAlpha = alpha * 0.2;
     ctx.fillStyle = '#888';
     ctx.fillRect(t.x - t.size/2, t.y - t.size/2, t.size, t.size);
-    t.life--;
-  }
+  });
   ctx.globalAlpha = 1;
-  enemyBulletTrails = enemyBulletTrails.filter(t => t.life > 0);
 }
 
 // Effetto vignetta
@@ -2932,6 +3092,25 @@ function addSpeedLine(x, y, angle) {
   });
 }
 
+function updateSpeedLines(dt) {
+  for (const s of speedLines) {
+    s.x += Math.cos(s.angle) * s.speed * dt;
+    s.y += Math.sin(s.angle) * s.speed * dt;
+    s.life -= dt;
+  }
+  // Compattazione in-place speedLines
+  {
+    let write = 0;
+    for (let read = 0; read < speedLines.length; read++) {
+      if (speedLines[read].life > 0) {
+        if (write !== read) speedLines[write] = speedLines[read];
+        write++;
+      }
+    }
+    speedLines.length = write;
+  }
+}
+
 function drawSpeedLines() {
   ctx.strokeStyle = '#fff';
   ctx.lineWidth = 1;
@@ -2944,12 +3123,8 @@ function drawSpeedLines() {
     ctx.moveTo(s.x, s.y);
     ctx.lineTo(x2, y2);
     ctx.stroke();
-    s.x += Math.cos(s.angle) * s.speed;
-    s.y += Math.sin(s.angle) * s.speed;
-    s.life--;
   }
   ctx.globalAlpha = 1;
-  speedLines = speedLines.filter(s => s.life > 0);
 }
 
 // Esplosione più elaborata
@@ -3280,11 +3455,13 @@ const INTRO_BOOT_TEXT = [
   ]
 ];
 
+let frameCount = 0;
 let frame = 0;
 let score = 0;
 let wave = 1;
+let lastTimestamp = null;
 
-const player = { x: GAME_W/2, y: GAME_H - 80, hp: 5, maxHP: 5, iFrames: 0, fireCD: 0 };
+const player = { x: GAME_W/2, y: GAME_H - 80, hp: CONFIG.PLAYER.hp, maxHP: CONFIG.PLAYER.maxHP, iFrames: 0, fireCD: 0 };
 let lives = 0; // Vite extra
 let bullets = [];
 let enemyBullets = [];
@@ -3318,6 +3495,7 @@ const boss = {
 };
 
 let meteorTimer = 0;
+let enemyTimer = 0;
 let waveTimer = 0;
 let bossIntro = false;
 let screenShake = 0;
@@ -3514,12 +3692,12 @@ function spawnEnemy(type) {
         ...baseEnemy,
         vx: (Math.random() - 0.5) * 2,
         vy: 1 + Math.random() * 0.5,
-        hp: 2,
-        maxHP: 2,
-        size: 18,
+        hp: CONFIG.ENEMIES.drone.hp,
+        maxHP: CONFIG.ENEMIES.drone.hp,
+        size: CONFIG.ENEMIES.drone.size,
         fireTimer: 60 + Math.random() * 60,
-        fireRate: 90,
-        points: 25
+        fireRate: CONFIG.ENEMIES.drone.fireRate,
+        points: CONFIG.ENEMIES.drone.points
       });
       break;
 
@@ -3530,14 +3708,14 @@ function spawnEnemy(type) {
         x: Math.random() * (GAME_W - 60) + 30,
         vx: 0,
         vy: 0.5, // Scende piano
-        hp: 4,
-        maxHP: 4,
-        size: 25,
+        hp: CONFIG.ENEMIES.sentry.hp,
+        maxHP: CONFIG.ENEMIES.sentry.hp,
+        size: CONFIG.ENEMIES.sentry.size,
         fireTimer: 30,
-        fireRate: 40,
+        fireRate: CONFIG.ENEMIES.sentry.fireRate,
         burstCount: 0,
-        maxBurst: 3,
-        points: 40
+        maxBurst: CONFIG.ENEMIES.sentryMaxBurst,
+        points: CONFIG.ENEMIES.sentry.points
       });
       break;
 
@@ -3547,13 +3725,13 @@ function spawnEnemy(type) {
         ...baseEnemy,
         vx: 0,
         vy: 1.5,
-        hp: 2,
-        maxHP: 2,
-        size: 16,
+        hp: CONFIG.ENEMIES.chaser.hp,
+        maxHP: CONFIG.ENEMIES.chaser.hp,
+        size: CONFIG.ENEMIES.chaser.size,
         fireTimer: 999, // Non spara, ma insegue
-        fireRate: 999,
-        chaseSpeed: 0.03,
-        points: 20
+        fireRate: CONFIG.ENEMIES.chaser.fireRate,
+        chaseSpeed: CONFIG.ENEMIES.chaser.chaseSpeed,
+        points: CONFIG.ENEMIES.chaser.points
       });
       break;
 
@@ -3563,12 +3741,12 @@ function spawnEnemy(type) {
         ...baseEnemy,
         vx: (Math.random() - 0.5) * 0.5,
         vy: 0.5,
-        hp: 6,
-        maxHP: 6,
-        size: 32,
+        hp: CONFIG.ENEMIES.bomber.hp,
+        maxHP: CONFIG.ENEMIES.bomber.hp,
+        size: CONFIG.ENEMIES.bomber.size,
         fireTimer: 80,
-        fireRate: 120,
-        points: 50
+        fireRate: CONFIG.ENEMIES.bomber.fireRate,
+        points: CONFIG.ENEMIES.bomber.points
       });
       break;
   }
@@ -3585,11 +3763,7 @@ function drawEnemy(enemy) {
   if (sprite && sprite.complete && sprite.naturalWidth > 0) {
     const size = enemy.size * 3.5; // Scala sprite (ingrandito)
 
-    // Glow effect
-    ctx.shadowColor = 'rgba(255, 255, 255, 0.5)';
-    ctx.shadowBlur = 5;
-
-    // Disegna sprite
+    // Disegna sprite (senza shadowBlur per performance)
     ctx.drawImage(sprite, -size/2, -size/2, size, size);
 
     // Effetto danno visivo
@@ -3669,7 +3843,7 @@ function drawEnemy(enemy) {
   ctx.restore();
 }
 
-function updateEnemies() {
+function updateEnemies(dt) {
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
 
@@ -3683,8 +3857,8 @@ function updateEnemies() {
       e.vy = Math.max(e.vy, (dy / dist) * e.chaseSpeed * 30);
     }
 
-    e.x += e.vx;
-    e.y += e.vy;
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
 
     // Limiti orizzontali
     if (e.x < e.size) { e.x = e.size; e.vx *= -1; }
@@ -3817,16 +3991,18 @@ function resetGame() {
   frame = 0; score = 0; wave = 1; lives = 0;
   player.x = GAME_W/2; player.y = GAME_H - 80; player.hp = player.maxHP; player.iFrames = 0; player.fireCD = 0;
   bullets = []; enemyBullets = []; meteors = []; enemies = []; explosions = []; particles = [];
-  engineParticles = []; damageNumbers = []; shockwaves = [];
-  bulletTrails = []; enemyBulletTrails = []; speedLines = [];
+  engineParticles = []; shockwaves = [];
+  speedLines = [];
   powerups = [];
   floatingNotifications = [];
+  // Svuota i pool
+  trailPool.clear(); dmgNumPool.clear();
   playerPowerups = { shield: false, shieldTime: 0, double: false, doubleTime: 0, bomb: false };
   screenFlash = 0;
   boss.active = false; boss.hp = 0; boss.enterDone = false; boss.defeated = false; boss.y = -100;
   boss.enterScale = 1; boss.attacking = false; boss.phase = 0; boss.attackTimer = 0; boss.patterns = 0;
   boss.type = 1; boss.name = 'IL GIGANTE DI STELLE';
-  meteorTimer = 0; waveTimer = 0; bossIntro = false; screenShake = 0; hitFlash = 0;
+  meteorTimer = 0; enemyTimer = 0; waveTimer = 0; bossIntro = false; screenShake = 0; hitFlash = 0;
   bossWarningState = { active: false, timer: 0, textProgress: 0, subtextProgress: 0, flickerPhase: 0, warningText: 'BOSS!', subtext: null, style: 'classic', fullText: '', bossType: 1, warningComplete: true, warningDuration: 180 };
   scorePop = { value: 0, scale: 1 };
   hpBarAnim = { targetHP: 5, currentHP: 5, flashTimer: 0 };
@@ -3840,12 +4016,11 @@ function startBoss() {
 
   boss.active = true;
   // HP aumenta con ogni boss e wave
-  const baseHP = [80, 100, 90, 110, 96, 120, 104, 116, 130, 240];  // Boss finale +50% HP
-  boss.hp = baseHP[boss.type - 1] + wave * 16;  // Incremento wave raddoppiato
+  boss.hp = CONFIG.BOSSES.baseHP[boss.type - 1] + wave * CONFIG.BOSSES.waveScaling;
   boss.maxHP = boss.hp;
   boss.y = -100;
   // Boss 2 ha sprite più alto, needs targetY più basso
-  boss.targetY = boss.type === 2 ? 280 : 90;
+  boss.targetY = boss.type === 2 ? CONFIG.BOSSES.boss2TargetY : 90;
   boss.enterDone = false;
   // Boss 3: appare al centro con zoom-in
   boss.enterScale = boss.type === 3 ? 0 : 1;
@@ -3899,7 +4074,91 @@ function startBoss() {
   }
 }
 
-function bossAI() {
+function updateBossParticles() {
+  // Genera particelle per i boss DURANTE la fase di update, non durante il rendering
+  // Questo separa la mutazione dello stato dal rendering per migliorare le performance
+  if (!boss.active || !boss.enterDone) return;
+
+  const hpRatio = boss.hp / boss.maxHP;
+
+  // Boss 5: La Nebulosa Vivente - particelle di energia ogni 3 frame
+  if (boss.type === 5 && frame % 3 === 0) {
+    const px = (Math.random() - 0.5) * 80;
+    const py = (Math.random() - 0.5) * 80;
+    particles.push({
+      x: boss.x + px,
+      y: boss.y + py,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      life: 15,
+      maxLife: 15,
+      type: 'spark',
+      color: '#fff',
+      size: 2
+    });
+  }
+
+  // Boss 6: L'Arcano Infinito - particelle arcane ogni 4 frame quando attacca
+  if (boss.type === 6 && frame % 4 < 2 && boss.attacking) {
+    particles.push({
+      x: boss.x + (Math.random() - 0.5) * 100,
+      y: boss.y + (Math.random() - 0.5) * 60,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: (Math.random() - 0.5) * 0.3,
+      life: 20,
+      maxLife: 20,
+      type: 'spark',
+      color: '#fff',
+      size: 3
+    });
+  }
+
+  // Boss 8: La Stella Morente - particelle di decadimento ogni 5 frame (solo se danneggiato)
+  if (boss.type === 8 && frame % 5 === 0 && hpRatio < 0.7) {
+    particles.push({
+      x: boss.x + (Math.random() - 0.5) * 60,
+      y: boss.y + (Math.random() - 0.5) * 60,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      life: 15 + Math.random() * 10,
+      maxLife: 25,
+      type: 'spark',
+      color: '#fff',
+      size: 2
+    });
+  }
+
+  // Boss 9: Il Colosso di Pietra - particelle di polvere ogni 8 frame
+  if (boss.type === 9 && frame % 8 === 0) {
+    particles.push({
+      x: boss.x + (Math.random() - 0.5) * 70,
+      y: boss.y + (Math.random() - 0.5) * 50,
+      vx: (Math.random() - 0.5) * 0.3,
+      vy: 0.5 + Math.random() * 0.5,
+      life: 10 + Math.random() * 10,
+      maxLife: 20,
+      type: 'smoke',
+      size: 3 + Math.random() * 3
+    });
+  }
+
+  // Boss 10: L'Entità Finale - particelle cosmiche ogni 3 frame
+  if (boss.type === 10 && frame % 3 === 0) {
+    particles.push({
+      x: boss.x + (Math.random() - 0.5) * 100,
+      y: boss.y + (Math.random() - 0.5) * 80,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: (Math.random() - 0.5) * 0.5,
+      life: 15 + Math.random() * 15,
+      maxLife: 30,
+      type: 'spark',
+      color: '#fff',
+      size: 2 + Math.random() * 2
+    });
+  }
+}
+
+function bossAI(dt) {
   // Il boss attende che il warning sia completo prima di scendere
   if (!boss.enterDone) {
     // Controlla se il warning è completo
@@ -3912,7 +4171,7 @@ function bossAI() {
     if (boss.type === 3) {
       boss.x = GAME_W / 2;
       boss.y = boss.targetY;  // Già al centro verticalmente
-      boss.enterScale += 0.015;  // Cresce gradualmente
+      boss.enterScale += 0.015 * dt;  // Cresce gradualmente
       if (boss.enterScale >= 1) {
         boss.enterScale = 1;
         boss.enterDone = true;
@@ -3922,7 +4181,7 @@ function bossAI() {
 
     // Altri boss: scendono dall'alto
     // Velocità ridotta per dare tempo di leggere
-    boss.y += 0.8;  // Rallentato da 1.5 a 0.8
+    boss.y += 0.8 * dt;  // Rallentato da 1.5 a 0.8
     if (boss.y >= boss.targetY) {
       boss.y = boss.targetY;
       boss.enterDone = true;
@@ -3936,14 +4195,14 @@ function bossAI() {
 
   // Movimento diverso per ogni boss
   if (boss.type === 2) {
-    boss.moveAngle += 0.02;
+    boss.moveAngle += 0.02 * dt;
     // Fase 2: movimento più aggressivo
     const aggressionMult = hpRatio < 0.6 ? 1.3 : 1;
     boss.x = GAME_W/2 + Math.sin(boss.moveAngle) * (100 * aggressionMult) + Math.sin(boss.moveAngle * 3) * 25;
     boss.y = boss.targetY + Math.cos(boss.moveAngle * 0.5) * 25;
   } else if (boss.type === 3) {
     // Boss3: La Cristallizzatrice - movimento a scatti
-    boss.moveAngle += 0.015;
+    boss.moveAngle += 0.015 * dt;
     // Movimento a scatti, teletrasporti ogni tanto
     const baseX = GAME_W/2 + Math.sin(boss.moveAngle) * 100;
     const baseY = boss.targetY + Math.cos(boss.moveAngle * 0.5) * 20;
@@ -3953,12 +4212,12 @@ function bossAI() {
       boss.y = baseY + (Math.random() - 0.5) * 30;
       addImpactParticles(boss.x, boss.y, 5, 2);
     } else {
-      boss.x += (baseX - boss.x) * 0.1;
-      boss.y += (baseY - boss.y) * 0.1;
+      boss.x += (baseX - boss.x) * 0.1 * dt;
+      boss.y += (baseY - boss.y) * 0.1 * dt;
     }
   } else if (boss.type === 4) {
     // Boss4: Il Divoratore di Soli - movimento orbitale pulsante
-    boss.moveAngle += 0.018;
+    boss.moveAngle += 0.018 * dt;
     // Orbita con pulsazione
     const pulse = Math.sin(frame * 0.03) * 0.3 + 1;
     const orbitRadius = 70 * pulse;
@@ -3969,12 +4228,12 @@ function bossAI() {
       const toPlayerX = player.x - boss.x;
       const toPlayerY = player.y - boss.y;
       const dist = Math.sqrt(toPlayerX*toPlayerX + toPlayerY*toPlayerY) || 1;
-      boss.x += (toPlayerX / dist) * 0.5;
-      boss.y += (toPlayerY / dist) * 0.3;
+      boss.x += (toPlayerX / dist) * 0.5 * dt;
+      boss.y += (toPlayerY / dist) * 0.3 * dt;
     }
   } else if (boss.type === 5) {
     // Boss5: La Nebulosa Vivente - movimento fluttuante imprevedibile
-    boss.moveAngle += 0.008;
+    boss.moveAngle += 0.008 * dt;
     // Movimento ondulatorio complesso
     const floatX = Math.sin(boss.moveAngle) * 60 + Math.sin(boss.moveAngle * 2.3) * 30;
     const floatY = Math.cos(boss.moveAngle * 0.7) * 20 + Math.sin(boss.moveAngle * 1.5) * 10;
@@ -3989,11 +4248,11 @@ function bossAI() {
     }
   } else if (boss.type === 6) {
     // Boss6: L'Arcano Infinito - teletrasporti e apparizioni
-    boss.moveAngle += 0.01;
+    boss.moveAngle += 0.01 * dt;
     // Posizione base oscillante
     const baseX = GAME_W/2 + Math.sin(boss.moveAngle) * 70;
     const baseY = boss.targetY + Math.cos(boss.moveAngle * 0.5) * 15;
-    // Teletrasporto periodico
+    // Teletrasporto periodico (frame-based, non cambia con dt)
     if (frame % 120 === 0 || (hpRatio < 0.5 && frame % 80 === 0)) {
       // Teletrasporto con effetto
       const prevX = boss.x;
@@ -4007,30 +4266,30 @@ function bossAI() {
       playSound('dash');
     } else {
       // Movimento fluido verso la posizione base
-      boss.x += (baseX - boss.x) * 0.08;
-      boss.y += (baseY - boss.y) * 0.08;
+      boss.x += (baseX - boss.x) * 0.08 * dt;
+      boss.y += (baseY - boss.y) * 0.08 * dt;
     }
   } else if (boss.type === 7) {
     // Boss7: Il Signore del Vuoto - fasi di invisibilità e movimento erratico
-    boss.moveAngle += 0.006;
+    boss.moveAngle += 0.006 * dt;
 
     // Movimento base lento
     const baseX = GAME_W/2 + Math.sin(boss.moveAngle) * 50;
     const baseY = boss.targetY + Math.sin(boss.moveAngle * 2) * 20;
 
-    // Fase di vuoto (invisibilità parziale)
+    // Fase di vuoto (invisibilità parziale) - frame based
     if (frame % 180 < 60) {
       // Durante la fase vuoto, si muove velocemente
-      boss.x += (Math.random() - 0.5) * 10;
-      boss.y += (Math.random() - 0.5) * 5;
+      boss.x += (Math.random() - 0.5) * 10 * dt;
+      boss.y += (Math.random() - 0.5) * 5 * dt;
       // Particelle di vuoto
       if (frame % 5 === 0) {
         addImpactParticles(boss.x, boss.y, 3, 2);
       }
     } else {
       // Movimento normale verso base
-      boss.x += (baseX - boss.x) * 0.05;
-      boss.y += (baseY - boss.y) * 0.05;
+      boss.x += (baseX - boss.x) * 0.05 * dt;
+      boss.y += (baseY - boss.y) * 0.05 * dt;
     }
 
     // Limiti
@@ -4042,11 +4301,11 @@ function bossAI() {
       const dx = player.x - boss.x;
       const dy = player.y - boss.y;
       const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-      boss.x += (dx / dist) * 0.3;
+      boss.x += (dx / dist) * 0.3 * dt;
     }
   } else if (boss.type === 8) {
     // Boss8: La Stella Morente - movimento pulsante e tremolante
-    boss.moveAngle += 0.008;
+    boss.moveAngle += 0.008 * dt;
 
     // Pulsazione base
     const baseX = GAME_W/2 + Math.sin(boss.moveAngle) * 60;
@@ -4055,12 +4314,12 @@ function bossAI() {
     // Tremolio quando HP basso
     const tremor = hpRatio < 0.5 ? Math.sin(frame * 0.3) * 5 * (1 - hpRatio) : 0;
 
-    // Momenti di quasi-invisibilità
+    // Momenti di quasi-invisibilità - frame based
     if (frame % 200 < 40 && hpRatio < 0.6) {
       // Fase di declino - movimento minimo
-      boss.x += (baseX - boss.x) * 0.02;
-      boss.y += (baseY - boss.y) * 0.02;
-      // Particelle di decadimento
+      boss.x += (baseX - boss.x) * 0.02 * dt;
+      boss.y += (baseY - boss.y) * 0.02 * dt;
+      // Particelle di decadimento (frame based)
       if (frame % 10 === 0) {
         particles.push({
           x: boss.x + (Math.random() - 0.5) * 80,
@@ -4076,8 +4335,8 @@ function bossAI() {
       }
     } else {
       // Movimento normale con tremore
-      boss.x += (baseX - boss.x) * 0.05 + tremor;
-      boss.y += (baseY - boss.y) * 0.05 + tremor * 0.5;
+      boss.x += ((baseX - boss.x) * 0.05 + tremor) * dt;
+      boss.y += ((baseY - boss.y) * 0.05 + tremor * 0.5) * dt;
     }
 
     // Eruzione improvvisa quando HP basso
@@ -4087,14 +4346,14 @@ function bossAI() {
     }
   } else if (boss.type === 9) {
     // Boss9: Il Colosso di Pietra - movimento pesante e lento
-    boss.moveAngle += 0.006; // Molto lento
+    boss.moveAngle += 0.006 * dt; // Molto lento
 
     // Movimento base pesante
     const baseX = GAME_W/2 + Math.sin(boss.moveAngle) * 50;
     const baseY = boss.targetY + Math.sin(boss.moveAngle * 0.5) * 10;
 
     // Movimento lento ma determinato
-    const speed = hpRatio < 0.5 ? 0.03 : 0.02;
+    const speed = (hpRatio < 0.5 ? 0.03 : 0.02) * dt;
     boss.x += (baseX - boss.x) * speed;
     boss.y += (baseY - boss.y) * speed;
 
@@ -4103,16 +4362,16 @@ function bossAI() {
       screenShake = Math.max(screenShake, 1);
     }
 
-    // Schianto quando HP basso
+    // Schianto quando HP basso - frame based
     if (hpRatio < 0.4 && frame % 180 === 0) {
       screenShake = 5;
       addImpactParticles(boss.x, boss.y + 30, 8, 4);
     }
   } else if (boss.type === 10) {
     // Boss10: L'Entità Finale - movimento dimensionale imprevedibile
-    boss.moveAngle += 0.015;
+    boss.moveAngle += 0.015 * dt;
 
-    // Movimento base con variazioni per fase
+    // Movimento base con variazioni per fase - frame based
     const phaseShift = Math.floor(frame / 180) % 4; // Cambia pattern ogni 3 secondi
 
     let baseX, baseY;
@@ -4137,7 +4396,7 @@ function bossAI() {
       baseY = boss.y + (toPlayerY / dist) * 15;
     }
 
-    // Shift dimensionale occasionale
+    // Shift dimensionale occasionale - frame based
     if (frame % 240 === 0 || (hpRatio < 0.5 && frame % 120 === 0)) {
       // Teletrasporto
       const prevX = boss.x;
@@ -4151,21 +4410,21 @@ function bossAI() {
       screenShake = 3;
     } else {
       // Movimento fluido
-      boss.x += (baseX - boss.x) * 0.06;
-      boss.y += (baseY - boss.y) * 0.06;
+      boss.x += (baseX - boss.x) * 0.06 * dt;
+      boss.y += (baseY - boss.y) * 0.06 * dt;
     }
 
     // Limiti
     boss.x = Math.max(50, Math.min(GAME_W - 50, boss.x));
     boss.y = Math.max(40, Math.min(boss.targetY + 50, boss.y));
   } else {
-    boss.moveAngle += 0.012;
+    boss.moveAngle += 0.012 * dt;
     const aggressionMult = hpRatio < 0.6 ? 1.2 : 1;
     boss.x = GAME_W/2 + Math.sin(boss.moveAngle) * (80 * aggressionMult);
     boss.y = boss.targetY + Math.cos(boss.moveAngle * 0.7) * 15;
   }
 
-  boss.attackTimer++;
+  boss.attackTimer += dt;
   const attackRate = hpRatio > 0.5 ? 80 : hpRatio > 0.25 ? 60 : 40;
 
   if (boss.attackTimer >= attackRate) {
@@ -5639,7 +5898,7 @@ function bossAI() {
 }
 
 function addExplosion(x, y, size = 20) {
-  explosions.push({ x, y, t: 0, maxT: 25, size });
+  explosions.push({ x, y, t: 0, maxT: CONFIG.EFFECTS.explosionMaxT, size });
 
   // Particelle principali (grayscale)
   for (let i = 0; i < 15; i++) {
@@ -5688,13 +5947,49 @@ function addExplosion(x, y, size = 20) {
   }
 }
 
+// Funzione unificata per danno al giocatore
+function playerHit(flashIntensity, impactCount, impactSize) {
+  if (playerPowerups.shield) {
+    playerPowerups.shield = false;
+    playerPowerups.shieldTime = 0;
+    playSound('hit');
+    triggerFlash(flashIntensity || 0.3);
+    addImpactParticles(player.x, player.y, impactCount || 10, impactSize || 4);
+    return false; // Scudo ha assorbito il colpo, nessun danno
+  }
+
+  playSound('hit');
+  player.hp--;
+  player.iFrames = CONFIG.PLAYER.iFramesHit;
+  screenShake = CONFIG.EFFECTS.hitFlashPlayerHit;
+
+  if (player.hp <= 0) {
+    if (lives > 0) {
+      lives--;
+      player.hp = player.maxHP;
+      player.iFrames = CONFIG.PLAYER.iFramesLife;
+      screenShake = CONFIG.EFFECTS.hitFlashLife;
+      triggerFlash(0.4);
+      playSound('powerup');
+      addImpactParticles(player.x, player.y, 20, 5);
+    } else {
+      gameState = 'gameover';
+    }
+    return true; // Il giocatore ha perso una vita o e morto
+  }
+  return false; // Il giocatore ha preso danno ma e ancora vivo
+}
+
 function collides(ax, ay, ar, bx, by, br) {
   const dx = ax - bx, dy = ay - by;
   return dx*dx + dy*dy < (ar+br)*(ar+br);
 }
 
-function update() {
-  frame++;
+function update(dt) {
+  // Safeguard: previeni dt NaN o undefined
+  if (!dt || isNaN(dt)) dt = 1.0;
+
+  frameCount++;
 
   // Player movement
   let dx = 0, dy = 0;
@@ -5705,52 +6000,69 @@ function update() {
 
   if (touchX !== null) {
     const tdx = touchX - player.x;
-    const tdy = touchY - 30 - player.y;
-    if (Math.abs(tdx) > 5) dx = tdx > 0 ? 1 : -1;
-    if (Math.abs(tdy) > 5) dy = tdy > 0 ? 1 : -1;
+    const tdy = touchY - CONFIG.PLAYER.touchYOffset - player.y;
+    if (Math.abs(tdx) > CONFIG.PLAYER.touchDeadzone) dx = tdx > 0 ? 1 : -1;
+    if (Math.abs(tdy) > CONFIG.PLAYER.touchDeadzone) dy = tdy > 0 ? 1 : -1;
   }
 
-  const speed = 4;
-  player.x += dx * speed;
-  player.y += dy * speed;
-  player.x = Math.max(20, Math.min(GAME_W - 20, player.x));
-  player.y = Math.max(60, Math.min(GAME_H - 30, player.y));
+  const speed = CONFIG.PLAYER.speed;
+  player.x += dx * speed * dt;
+  player.y += dy * speed * dt;
+  player.x = Math.max(CONFIG.PLAYER.minX, Math.min(CONFIG.PLAYER.maxX, player.x));
+  player.y = Math.max(CONFIG.PLAYER.minY, Math.min(CONFIG.PLAYER.maxY, player.y));
 
-  if (player.iFrames > 0) player.iFrames--;
+  if (player.iFrames > 0) player.iFrames -= dt;
 
   // Fire
-  player.fireCD--;
+  player.fireCD -= dt;
   const firing = keys['Space'] || keys['KeyZ'] || touchFire;
   if (firing && player.fireCD <= 0) {
     playSound('laser');
-    player.fireCD = playerPowerups.double ? 6 : 8;
+    player.fireCD = playerPowerups.double ? CONFIG.PLAYER.fireCDDouble : CONFIG.PLAYER.fireCDNormal;
 
     if (playerPowerups.double) {
       // Doppio sparo
-      bullets.push({ x: player.x - 8, y: player.y - 16, vy: -7 });
-      bullets.push({ x: player.x + 8, y: player.y - 16, vy: -7 });
+      bullets.push({ x: player.x - CONFIG.PLAYER.bulletOffsetX, y: player.y + CONFIG.PLAYER.bulletOffsetY, vy: CONFIG.PLAYER.bulletSpeed });
+      bullets.push({ x: player.x + CONFIG.PLAYER.bulletOffsetX, y: player.y + CONFIG.PLAYER.bulletOffsetY, vy: CONFIG.PLAYER.bulletSpeed });
     } else {
-      bullets.push({ x: player.x, y: player.y - 16, vy: -7 });
+      bullets.push({ x: player.x, y: player.y + CONFIG.PLAYER.bulletOffsetY, vy: CONFIG.PLAYER.bulletSpeed });
     }
 
     // Recoil particle
     particles.push({ x: player.x, y: player.y - 12, vx: (Math.random()-0.5)*0.5, vy: 2, life: 5, maxLife: 5 });
   }
 
-  // Update bullets
-  bullets = bullets.filter(b => { b.y += b.vy; return b.y > -10; });
+  // Update bullets - compattazione in-place
+  {
+    let write = 0;
+    for (let i = 0; i < bullets.length; i++) {
+      bullets[i].y += bullets[i].vy * dt;
+      if (bullets[i].y > -10) {
+        if (write !== i) bullets[write] = bullets[i];
+        write++;
+      }
+    }
+    bullets.length = write;
+  }
 
-  // Update enemy bullets con comportamenti speciali
-  enemyBullets = enemyBullets.filter(b => {
-    // Proiettili inseguitori (homing)
+  // Update enemy bullets con comportamenti speciali - compattazione in-place
+  {
+    let write = 0;
+    const newBullets = []; // Raccolta proiettili generati durante il loop
+    const origLen = enemyBullets.length; // Itera solo sui proiettili esistenti
+    for (let read = 0; read < origLen; read++) {
+      const b = enemyBullets[read];
+      let keep = true;
+
+      // Proiettili inseguitori (homing)
     if (b.homing && b.homingTimer > 0) {
-      b.homingTimer--;
+      b.homingTimer -= dt;
       const dx = player.x - b.x;
       const dy = player.y - b.y;
       const dist = Math.sqrt(dx*dx + dy*dy) || 1;
       // Curva verso il giocatore
-      b.vx += (dx / dist) * 0.15;
-      b.vy += (dy / dist) * 0.15;
+      b.vx += (dx / dist) * 0.15 * dt;
+      b.vy += (dy / dist) * 0.15 * dt;
       // Limita velocità
       const speed = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
       if (speed > 4) {
@@ -5761,12 +6073,12 @@ function update() {
 
     // Proiettili esplosivi ritardati
     if (b.explodeTimer !== undefined) {
-      b.explodeTimer--;
+      b.explodeTimer -= dt;
       if (b.explodeTimer <= 0) {
         // Esplode in 8 direzioni
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          enemyBullets.push({
+          newBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 3,
@@ -5777,26 +6089,26 @@ function update() {
         }
         addImpactParticles(b.x, b.y, 6, 2);
         playSound('hit');
-        return false; // Rimuovi il proiettile esploso
+        keep = false; // Rimuovi il proiettile esploso
       }
     }
 
     // Proiettili nebulosi con deriva
     if (b.drift && b.life !== undefined) {
-      b.life--;
+      b.life -= dt;
       // Movimento fluttuante
-      b.vx += (Math.random() - 0.5) * 0.05;
-      b.vy += (Math.random() - 0.5) * 0.05;
+      b.vx += (Math.random() - 0.5) * 0.05 * dt;
+      b.vy += (Math.random() - 0.5) * 0.05 * dt;
       // Attrito per rallentare
       b.vx *= 0.99;
       b.vy *= 0.99;
-      if (b.life <= 0) return false;
+      if (b.life <= 0) { keep = false; continue; }
     }
 
     // Proiettili curvi (tentacoli)
     if (b.curve !== undefined) {
       const currentAngle = Math.atan2(b.vy, b.vx);
-      const newAngle = currentAngle + b.curve;
+      const newAngle = currentAngle + b.curve * dt;
       const speed = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
       b.vx = Math.cos(newAngle) * speed;
       b.vy = Math.sin(newAngle) * speed;
@@ -5804,7 +6116,7 @@ function update() {
 
     // Proiettili che implodono poi esplodono
     if (b.implodeTimer !== undefined) {
-      b.implodeTimer--;
+      b.implodeTimer -= dt;
       if (b.implodeTimer <= 0) {
         // Esplode verso l'esterno
         const angle = Math.atan2(b.vy, b.vx) + Math.PI; // Direzione opposta
@@ -5817,7 +6129,7 @@ function update() {
 
     // Proiettili arcani che si duplicano
     if (b.duplicate && b.duplicateTimer !== undefined) {
-      b.duplicateTimer--;
+      b.duplicateTimer -= dt;
       if (b.duplicateTimer <= 0) {
         // Genera un nuovo proiettile nella direzione perpendicolare
         const angle = Math.atan2(b.vy, b.vx);
@@ -5825,7 +6137,7 @@ function update() {
         const perpAngle2 = angle - Math.PI/2;
         const speed = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
 
-        enemyBullets.push({
+        newBullets.push({
           x: b.x,
           y: b.y,
           vx: Math.cos(perpAngle1) * speed,
@@ -5841,7 +6153,7 @@ function update() {
 
     // Homing ritardato per proiettili arcani
     if (b.homingDelay !== undefined && b.homingDelay > 0) {
-      b.homingDelay--;
+      b.homingDelay -= dt;
       // Fermo il proiettile durante il delay
       b.vx *= 0.95;
       b.vy *= 0.95;
@@ -5858,8 +6170,8 @@ function update() {
       const dy = player.y - b.y;
       const dist = Math.sqrt(dx*dx + dy*dy) || 1;
       // Attrazione verso il giocatore
-      b.vx += (dx / dist) * b.gravityStrength;
-      b.vy += (dy / dist) * b.gravityStrength;
+      b.vx += (dx / dist) * b.gravityStrength * dt;
+      b.vy += (dy / dist) * b.gravityStrength * dt;
       // Limita velocità
       const speed = Math.sqrt(b.vx*b.vx + b.vy*b.vy);
       if (speed > 4) {
@@ -5870,7 +6182,7 @@ function update() {
 
     // Proiettili lenti del vuoto
     if (b.slow && b.life !== undefined) {
-      b.life--;
+      b.life -= dt;
       // Curva lentamente
       b.vx *= 0.995;
       b.vy *= 0.995;
@@ -5878,14 +6190,14 @@ function update() {
       const dx = player.x - b.x;
       const dy = player.y - b.y;
       const dist = Math.sqrt(dx*dx + dy*dy) || 1;
-      b.vx += (dx / dist) * 0.01;
-      b.vy += (dy / dist) * 0.01;
-      if (b.life <= 0) return false;
+      b.vx += (dx / dist) * 0.01 * dt;
+      b.vy += (dy / dist) * 0.01 * dt;
+      if (b.life <= 0) { keep = false; continue; }
     }
 
     // Zone oscure del vuoto
     if (b.voidZone && b.zoneTimer !== undefined) {
-      b.zoneTimer--;
+      b.zoneTimer -= dt;
       // Visivamente fermo
       b.vx = 0;
       b.vy = 0;
@@ -5893,7 +6205,7 @@ function update() {
         // Esplode in 8 direzioni
         for (let i = 0; i < 8; i++) {
           const a = (i / 8) * Math.PI * 2;
-          enemyBullets.push({
+          newBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2.5,
@@ -5904,13 +6216,13 @@ function update() {
         }
         addImpactParticles(b.x, b.y, 6, 2);
         playSound('hit');
-        return false;
+        keep = false; continue;
       }
     }
 
     // Proiettili fantasma
     if (b.ghost && b.ghostTimer !== undefined) {
-      b.ghostTimer--;
+      b.ghostTimer -= dt;
       // Appare gradualmente
       if (b.ghostTimer > 10) {
         b.vx = 0;
@@ -5924,7 +6236,7 @@ function update() {
 
     // Singolarità (proiettili che espandono poi contraggono)
     if (b.singularity && b.phaseTimer !== undefined) {
-      b.phaseTimer--;
+      b.phaseTimer -= dt;
       if (b.phaseTimer <= 0) {
         if (b.phase === 'expand') {
           // Passa a contrazione
@@ -5934,28 +6246,28 @@ function update() {
           b.vy *= -1;
         } else {
           // Rimuovi
-          return false;
+          keep = false; continue;
         }
       }
     }
 
     // Proiettili che sfumano (stella morente)
     if (b.fade && b.fadeTimer !== undefined) {
-      b.fadeTimer--;
+      b.fadeTimer -= dt;
       // Diminuisci velocità gradualmente
       b.vx *= 0.99;
       b.vy *= 0.99;
-      if (b.fadeTimer <= 0) return false;
+      if (b.fadeTimer <= 0) { keep = false; continue; }
     }
 
     // Nova proiettili (esplodono dopo un delay)
     if (b.nova && b.novaTimer !== undefined) {
-      b.novaTimer--;
+      b.novaTimer -= dt;
       if (b.novaTimer <= 0) {
         // Esplode in 4 direzioni
         for (let i = 0; i < 4; i++) {
           const a = (i / 4) * Math.PI * 2;
-          enemyBullets.push({
+          newBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2.5,
@@ -5965,13 +6277,13 @@ function update() {
           });
         }
         addImpactParticles(b.x, b.y, 4, 2);
-        return false;
+        keep = false; continue;
       }
     }
 
     // Proiettili sfarfallanti
     if (b.flicker && b.flickerTimer !== undefined) {
-      b.flickerTimer--;
+      b.flickerTimer -= dt;
       // Movimento intermittente
       if (frame % 10 < 5) {
         b.vx *= 0.5;
@@ -5985,7 +6297,7 @@ function update() {
 
     // Proiettili che convergono (verso un punto)
     if (b.converge && b.convergeTimer !== undefined) {
-      b.convergeTimer--;
+      b.convergeTimer -= dt;
       if (b.convergeTarget) {
         const dx = b.convergeTarget.x - b.x;
         const dy = b.convergeTarget.y - b.y;
@@ -5999,7 +6311,7 @@ function update() {
         // Esplode
         for (let i = 0; i < 6; i++) {
           const a = (i / 6) * Math.PI * 2;
-          enemyBullets.push({
+          newBullets.push({
             x: b.x,
             y: b.y,
             vx: Math.cos(a) * 2,
@@ -6008,21 +6320,21 @@ function update() {
             type: b.type
           });
         }
-        return false;
+        keep = false; continue;
       }
     }
 
     // Proiettili pesanti di pietra
     if (b.heavy) {
       // Caduta più veloce (gravità)
-      b.vy += 0.05;
+      b.vy += 0.05 * dt;
       // Non rimbalzano sullo schermo
-      if (b.y > GAME_H + 20) return false;
+      if (b.y > GAME_H + 20) { keep = false; continue; }
     }
 
     // Proiettili pilastro
     if (b.pillar && b.pillarTimer !== undefined) {
-      b.pillarTimer--;
+      b.pillarTimer -= dt;
       // Fermo mentre aspetta
       if (b.pillarTimer > 20) {
         b.vx = 0;
@@ -6036,19 +6348,39 @@ function update() {
       }
     }
 
-    b.x += b.vx;
-    b.y += b.vy;
-    return b.y < GAME_H + 10 && b.y > -10 && b.x > -10 && b.x < GAME_W + 10;
-  });
-
-  // Meteors
-  for (const m of meteors) {
-    m.x += m.vx; m.y += m.vy; m.rot += m.rotV;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    if (keep && !(b.y < GAME_H + 10 && b.y > -10 && b.x > -10 && b.x < GAME_W + 10)) {
+      keep = false;
+    }
+    if (keep) {
+      if (write !== read) enemyBullets[write] = b;
+      write++;
+    }
+    }
+    enemyBullets.length = write;
+    // Aggiungi i nuovi proiettili generati durante il loop (es. esplosioni, duplicazioni)
+    for (let i = 0; i < newBullets.length; i++) {
+      enemyBullets.push(newBullets[i]);
+    }
   }
-  meteors = meteors.filter(m => m.y < GAME_H + 30);
+
+  // Meteors - compattazione in-place
+  {
+    let write = 0;
+    for (let read = 0; read < meteors.length; read++) {
+      const m = meteors[read];
+      m.x += m.vx * dt; m.y += m.vy * dt; m.rot += m.rotV * dt;
+      if (m.y < GAME_H + 30) {
+        if (write !== read) meteors[write] = m;
+        write++;
+      }
+    }
+    meteors.length = write;
+  }
 
   // Enemies
-  updateEnemies();
+  updateEnemies(dt);
 
   // Bullet vs meteor
   for (let i = bullets.length - 1; i >= 0; i--) {
@@ -6101,20 +6433,21 @@ function update() {
   // Bullet vs boss
   if (boss.active && boss.enterDone) {
     for (let i = bullets.length - 1; i >= 0; i--) {
-      if (collides(bullets[i].x, bullets[i].y, 3, boss.x, boss.y, 70)) {
+      if (collides(bullets[i].x, bullets[i].y, CONFIG.PLAYER.bulletSize, boss.x, boss.y, CONFIG.BOSSES.collisionRadius)) {
+        const bx = bullets[i].x, by = bullets[i].y;
         bullets.splice(i, 1);
-        boss.hp -= 2;
-        score += 5;
+        boss.hp -= CONFIG.BOSSES.damagePerBullet;
+        score += CONFIG.BOSSES.scorePerHit;
         scorePop.scale = 1.3;
         screenShake = 3;
-        hitFlash = 5;
+        hitFlash = CONFIG.EFFECTS.hitFlashDefault;
         triggerFlash(0.1);
         addBossSparks(boss.x + (Math.random() - 0.5) * 60, boss.y + (Math.random() - 0.5) * 60);
-        addImpactParticles(bullets[i]?.x || boss.x, bullets[i]?.y || boss.y, 6, 3);
-        addDamageNumber(boss.x + (Math.random() - 0.5) * 40, boss.y - 30, 5);
+        addImpactParticles(bx, by, 6, 3);
+        addDamageNumber(boss.x + (Math.random() - 0.5) * 40, boss.y - 30, CONFIG.BOSSES.damagePerBullet);
 
-        // Linee di velocità
-        for (let k = 0; k < 3; k++) {
+        // Linee di velocita
+        for (let k = 0; k < CONFIG.EFFECTS.speedLinesPerHit; k++) {
           addSpeedLine(boss.x + (Math.random() - 0.5) * 60, boss.y + (Math.random() - 0.5) * 60, Math.random() * Math.PI * 2);
         }
 
@@ -6123,7 +6456,7 @@ function update() {
           boss.active = false;
           boss.defeated = true;
           clearBossAttackTimers(); // Cancella tutti i timer degli attacchi in corso
-          score += 500 * wave;
+          score += CONFIG.BOSSES.defeatBaseScore * wave;
           scorePop.scale = 1.5;
 
           // Esplosioni multiple
@@ -6137,7 +6470,7 @@ function update() {
           shockwaves.push({ x: boss.x, y: boss.y, r: 0, maxR: 300, alpha: 1 });
           setTimeout(() => shockwaves.push({ x: boss.x, y: boss.y, r: 0, maxR: 200, alpha: 0.7 }), 100);
           screenShake = 25;
-          hitFlash = 20;
+          hitFlash = CONFIG.EFFECTS.hitFlashBossDefeat;
           triggerFlash(0.4);
 
           // Bomb effect dopo 3 secondi - libera lo schermo
@@ -6175,8 +6508,8 @@ function update() {
           wave++;
           waveTimer = 0;
 
-          // Vita extra ogni 5 wave
-          if (wave % 5 === 0) {
+          // Vita extra ogni N wave
+          if (wave % CONFIG.WAVES.extraLifeEvery === 0) {
             lives++;
             addImpactParticles(player.x, player.y, 15, 5);
             playSound('powerup');
@@ -6190,39 +6523,13 @@ function update() {
   // Player vs meteor
   if (player.iFrames <= 0) {
     for (let j = meteors.length - 1; j >= 0; j--) {
-      if (collides(player.x, player.y, 10, meteors[j].x, meteors[j].y, meteors[j].size)) {
-        if (playerPowerups.shield) {
-          // Scudo blocca il danno
-          playerPowerups.shield = false;
-          playerPowerups.shieldTime = 0;
-          playSound('hit');
-          triggerFlash(0.3);
-          addImpactParticles(player.x, player.y, 10, 4);
-          meteors.splice(j, 1);
-        } else {
-          playSound('hit');
-          player.hp--;
-          player.iFrames = 60;
-          screenShake = 8;
+      if (collides(player.x, player.y, CONFIG.COLLISION.playerMeteor, meteors[j].x, meteors[j].y, meteors[j].size)) {
+        if (!playerPowerups.shield) {
           addExplosion(meteors[j].x, meteors[j].y);
-          meteors.splice(j, 1);
         }
-
-        if (player.hp <= 0) {
-          if (lives > 0) {
-            // Usa una vita extra
-            lives--;
-            player.hp = player.maxHP;
-            player.iFrames = 120; // 2 secondi di invulnerabilità
-            screenShake = 10;
-            triggerFlash(0.4);
-            playSound('powerup');
-            addImpactParticles(player.x, player.y, 20, 5);
-          } else {
-            gameState = 'gameover';
-          }
-          return;
-        }
+        meteors.splice(j, 1);
+        const died = playerHit(0.3, 10, 4);
+        if (died) return;
         break;
       }
     }
@@ -6231,36 +6538,13 @@ function update() {
   // Player vs enemies
   if (player.iFrames <= 0) {
     for (let j = enemies.length - 1; j >= 0; j--) {
-      if (collides(player.x, player.y, 10, enemies[j].x, enemies[j].y, enemies[j].size)) {
-        if (playerPowerups.shield) {
-          playerPowerups.shield = false;
-          playerPowerups.shieldTime = 0;
-          playSound('hit');
-          triggerFlash(0.3);
-          addImpactParticles(player.x, player.y, 10, 4);
-        } else {
-          playSound('hit');
-          player.hp--;
-          player.iFrames = 60;
-          screenShake = 8;
+      if (collides(player.x, player.y, CONFIG.COLLISION.playerEnemy, enemies[j].x, enemies[j].y, enemies[j].size)) {
+        if (!playerPowerups.shield) {
           addExplosion(enemies[j].x, enemies[j].y);
-          // Alert CRITICAL se HP basso
         }
         enemies.splice(j, 1);
-        if (player.hp <= 0) {
-          if (lives > 0) {
-            lives--;
-            player.hp = player.maxHP;
-            player.iFrames = 120;
-            screenShake = 10;
-            triggerFlash(0.4);
-            playSound('powerup');
-            addImpactParticles(player.x, player.y, 20, 5);
-          } else {
-            gameState = 'gameover';
-          }
-          return;
-        }
+        const died = playerHit(0.3, 10, 4);
+        if (died) return;
         break;
       }
     }
@@ -6269,91 +6553,71 @@ function update() {
   // Player vs enemy bullets
   if (player.iFrames <= 0) {
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
-      if (collides(player.x, player.y, 8, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].size)) {
+      if (collides(player.x, player.y, CONFIG.COLLISION.playerBullet, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].size)) {
         enemyBullets.splice(i, 1);
-        if (playerPowerups.shield) {
-          // Scudo blocca il danno
-          playerPowerups.shield = false;
-          playerPowerups.shieldTime = 0;
-          playSound('hit');
-          triggerFlash(0.2);
-          addImpactParticles(player.x, player.y, 6, 3);
-        } else {
-          playSound('hit');
-          player.hp--;
-          player.iFrames = 60;
-          screenShake = 8;
-        }
-        if (player.hp <= 0) {
-          if (lives > 0) {
-            lives--;
-            player.hp = player.maxHP;
-            player.iFrames = 120;
-            screenShake = 10;
-            triggerFlash(0.4);
-            playSound('powerup');
-            addImpactParticles(player.x, player.y, 20, 5);
-          } else {
-            gameState = 'gameover';
-          }
-          return;
-        }
+        const died = playerHit(0.2, 6, 3);
+        if (died) return;
         break;
       }
     }
   }
 
+  // Boss particles update (separato dal rendering)
+  if (boss.active) updateBossParticles();
+
   // Boss AI
-  if (boss.active) bossAI();
+  if (boss.active) bossAI(dt);
 
   // Wave management - onde più lunghe con difficoltà crescente
-  const waveDuration = 800 + wave * 100; // Raddoppiato: dura il doppio
-  const meteorSpawnRate = Math.max(20, 40 - wave * 2); // Meteore più frequenti
-  const enemySpawnRate = Math.max(130, 300 - wave * 25); // Ridotto del 40%
+  const waveDuration = CONFIG.WAVES.baseDuration + wave * CONFIG.WAVES.durationPerWave;
+  const meteorSpawnRate = Math.max(CONFIG.WAVES.meteorSpawnMin, CONFIG.WAVES.meteorSpawnBase - wave * CONFIG.WAVES.meteorSpawnReduction);
+  const enemySpawnRate = Math.max(CONFIG.WAVES.enemySpawnMin, CONFIG.WAVES.enemySpawnBase - wave * CONFIG.WAVES.enemySpawnReduction);
 
   if (!boss.active && !boss.defeated) {
-    waveTimer++;
+    waveTimer += dt;
 
     // Spawn meteore
-    meteorTimer++;
+    meteorTimer += dt;
     if (meteorTimer >= meteorSpawnRate) {
       meteorTimer = 0;
       spawnMeteor();
 
       // Meteorite massiccia occasionale (dalla wave 3)
-      if (wave >= 3 && Math.random() < 0.15) {
+      if (wave >= CONFIG.WAVES.massiveWave && Math.random() < CONFIG.WAVES.massiveChance) {
         spawnMeteor('massive');
       }
 
       // Meteorite scudo occasionale (dalla wave 2)
-      if (wave >= 2 && Math.random() < 0.08) {
+      if (wave >= CONFIG.WAVES.shieldWave && Math.random() < CONFIG.WAVES.shieldChance) {
         spawnMeteor('shield');
       }
 
       // Meteore extra nelle wave avanzate
-      if (wave >= 3 && Math.random() < 0.3) {
+      if (wave >= CONFIG.WAVES.extraMeteorWave && Math.random() < CONFIG.WAVES.extraMeteorChance) {
         spawnMeteor();
       }
-      if (wave >= 6 && Math.random() < 0.2) {
+      if (wave >= CONFIG.WAVES.extraMeteor2Wave && Math.random() < CONFIG.WAVES.extraMeteor2Chance) {
         spawnMeteor();
       }
     }
 
     // Spawn nemici aggiuntivi (solo durante la wave, non durante il boss)
-    if (waveTimer % enemySpawnRate === 0 && waveTimer < waveDuration - 60) {
+    enemyTimer += dt;
+    if (enemyTimer >= enemySpawnRate && waveTimer < waveDuration - CONFIG.WAVES.enemySpawnBuffer) {
       // Tipi di nemici in base alla wave
       const availableTypes = ['drone']; // Wave 1-2: solo drone
 
-      if (wave >= 2) availableTypes.push('chaser'); // Wave 2+: chaser
-      if (wave >= 4) availableTypes.push('sentry'); // Wave 4+: sentry
-      if (wave >= 5) availableTypes.push('bomber'); // Wave 5+: bomber
+      if (wave >= CONFIG.ENEMIES.unlockWave.chaser) availableTypes.push('chaser'); // Wave 2+: chaser
+      if (wave >= CONFIG.ENEMIES.unlockWave.sentry) availableTypes.push('sentry'); // Wave 4+: sentry
+      if (wave >= CONFIG.ENEMIES.unlockWave.bomber) availableTypes.push('bomber'); // Wave 5+: bomber
 
       // Scegli tipo casuale
       const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
       spawnEnemy(type);
+      enemyTimer = 0;
 
       // Nemici extra nelle wave più alte
-      if (wave >= 4 && Math.random() < 0.3) {
+      if (wave >= CONFIG.WAVES.extraEnemyWave && Math.random() < CONFIG.WAVES.extraEnemyChance) {
         spawnEnemy(availableTypes[Math.floor(Math.random() * availableTypes.length)]);
       }
     }
@@ -6364,25 +6628,49 @@ function update() {
     }
   }
   if (boss.defeated) {
-    waveTimer++;
-    if (waveTimer > 180) {
+    waveTimer += dt;
+    if (waveTimer > CONFIG.WAVES.postBossCooldown) {
       boss.defeated = false;
       waveTimer = 0;
     }
   }
 
   // Explosions & particles
-  explosions = explosions.filter(e => { e.t++; return e.t < e.maxT; });
-  particles = particles.filter(p => {
-    p.x += p.vx;
-    p.y += p.vy;
-    if (p.type === 'smoke') p.vy -= 0.02; // Fumo sale
-    p.life--;
-    return p.life > 0;
-  });
+  // Explosions - compattazione in-place
+  {
+    let write = 0;
+    for (let read = 0; read < explosions.length; read++) {
+      explosions[read].t += dt;
+      if (explosions[read].t < explosions[read].maxT) {
+        if (write !== read) explosions[write] = explosions[read];
+        write++;
+      }
+    }
+    explosions.length = write;
+  }
+
+  // Particles - compattazione in-place invece di .filter()
+  {
+    let write = 0;
+    for (let read = 0; read < particles.length; read++) {
+      const p = particles[read];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.type === 'smoke') p.vy -= 0.02 * dt;
+      p.life -= dt;
+      if (p.life > 0) {
+        if (write !== read) particles[write] = p;
+        write++;
+      }
+    }
+    particles.length = write;
+  }
+
+  // Engine particles
+  updateEngineParticles(dt);
 
   // Powerups
-  updatePowerups();
+  updatePowerups(dt);
 
   // Boss music - cambia traccia quando entra/esce il boss
   if (boss.active && currentMusicTrack !== 'boss') {
@@ -6392,14 +6680,39 @@ function update() {
   }
 
   // Aggiorna notifiche fluttuanti
-  updateFloatingNotifications();
+  updateFloatingNotifications(dt);
 
-  if (screenShake > 0) screenShake = Math.max(0, screenShake - 0.5);
-  if (hitFlash > 0) hitFlash--;
-  if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - 0.02);
+  // Damage numbers
+  updateDamageNumbers(dt);
+
+  // Bullet trails
+  updateBulletTrails(dt);
+  updateEnemyBulletTrails(dt);
+
+  // Speed lines
+  updateSpeedLines(dt);
+
+  // Shockwaves - update
+  {
+    let write = 0;
+    for (let read = 0; read < shockwaves.length; read++) {
+      shockwaves[read].r += 5 * dt;
+      shockwaves[read].alpha -= 0.02 * dt;
+      if (shockwaves[read].r < shockwaves[read].maxR) {
+        if (write !== read) shockwaves[write] = shockwaves[read];
+        write++;
+      }
+    }
+    shockwaves.length = write;
+  }
+
+  if (screenShake > 0) screenShake = Math.max(0, screenShake - CONFIG.EFFECTS.screenShakeDecay * dt);
+  if (hitFlash > 0) hitFlash -= dt;
+  if (screenFlash > 0) screenFlash = Math.max(0, screenFlash - CONFIG.EFFECTS.screenFlashDecay * dt);
 }
 
 function render() {
+  frame = frameCount;
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, GAME_W, GAME_H);
 
@@ -6425,7 +6738,7 @@ function render() {
 
   // Boss
   if (boss.active) {
-    drawBossHead(boss.x, boss.y, boss.phase, boss.hp, boss.maxHP, boss.attacking, frame, boss.type);
+    drawBossHead(boss.x, boss.y, boss.phase, boss.hp, boss.maxHP, boss.attacking, frameCount, boss.type);
   }
 
   // Enemy bullets
@@ -6453,7 +6766,7 @@ function render() {
 
   // Player
   if (player.iFrames <= 0 || frame % 4 < 2) {
-    drawPlayerShip(player.x, player.y, frame);
+    drawPlayerShip(player.x, player.y, frameCount);
   }
 
   // Scudo visibile
@@ -6858,6 +7171,15 @@ function drawIntro() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, GAME_W, GAME_H);
 
+  // Messaggio "Click to skip" sempre visibile
+  ctx.save();
+  ctx.font = '8px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  const skipAlpha = 0.4 + Math.sin(Date.now() * 0.003) * 0.2;
+  ctx.fillStyle = `rgba(255, 255, 255, ${skipAlpha})`;
+  ctx.fillText('TOCCA PER SALTARE', GAME_W / 2, GAME_H - 15);
+  ctx.restore();
+
   // Effetto CRT scanlines
   ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
   for (let y = 0; y < GAME_H; y += 2) {
@@ -6870,12 +7192,12 @@ function drawIntro() {
     ctx.fillRect(0, Math.random() * GAME_H, GAME_W, 2 + Math.random() * 4);
   }
 
-  ctx.font = '10px "Press Start 2P", monospace';
+  ctx.font = '12px "Press Start 2P", monospace';
   ctx.textAlign = 'left';
 
   // Colore testo con flicker
   const flicker = Math.random() < 0.1 ? 0.7 : 1;
-  ctx.fillStyle = `rgba(200, 255, 200, ${flicker})`;
+  ctx.fillStyle = `rgba(100, 255, 100, ${flicker})`;
 
   const lineSpacing = 22;
   const startY = 120;
@@ -6963,27 +7285,57 @@ function drawIntro() {
   }
 }
 
-function gameLoop() {
-  if (gameState === 'intro') {
-    // Intro boot sequence
-    drawIntro();
-
-    // Se l'intro è completo, passa al menu
-    if (introComplete) {
-      gameState = 'start';
-      startScreen.style.display = 'flex';
-      // Mostra istruzioni installazione iOS se necessario
-      showIOSInstallScreen();
-      showIOSHint();
+function gameLoop(timestamp) {
+  try {
+    console.log('gameLoop:', gameState, timestamp);
+    // Calcola delta time (dt) - tempo trascorso dall'ultimo frame normalizzato a 60fps
+    if (lastTimestamp === null) {
+      lastTimestamp = timestamp;
+      // Primo frame: usa dt=1 per evitare problemi
+      const dt = 1.0;
+      if (gameState === 'intro') {
+        console.log('Drawing intro...');
+        drawIntro();
+        console.log('Intro complete:', introComplete);
+        if (introComplete) {
+          gameState = 'start';
+          startScreen.style.display = 'flex';
+          showIOSInstallScreen();
+          showIOSHint();
+        }
+      } else if (gameState === 'playing') {
+        update(dt);
+        render();
+      }
+      requestAnimationFrame(gameLoop);
+      return;
     }
-  } else if (gameState === 'playing') {
-    update();
-    render();
-  } else if (gameState === 'paused') {
-    // Gioco in pausa - mostra schermata pause
-    render(); // Continua a renderizzare
-    drawPauseScreen();
-    pausedTime++;
+    const dt = Math.min(Math.max((timestamp - lastTimestamp) / 16.667, 0.5), 3.0);
+    lastTimestamp = timestamp;
+
+    if (gameState === 'intro') {
+      // Intro boot sequence
+      drawIntro();
+
+      // Se l'intro è completo, passa al menu
+      if (introComplete) {
+        gameState = 'start';
+        startScreen.style.display = 'flex';
+        // Mostra istruzioni installazione iOS se necessario
+        showIOSInstallScreen();
+        showIOSHint();
+      }
+    } else if (gameState === 'playing') {
+      update(dt);
+      render();
+    } else if (gameState === 'paused') {
+      // Gioco in pausa - mostra schermata pause
+      render(); // Continua a renderizzare
+      drawPauseScreen();
+      pausedTime += dt;
+    }
+  } catch(e) {
+    console.error('Game loop error:', e);
   }
   requestAnimationFrame(gameLoop);
 }
@@ -7022,6 +7374,7 @@ function drawPauseScreen() {
 // Le variabili musicali sono già definite sopra nel sistema musicale avanzato
 
 function startGame() {
+  gameOverHandled = false;
   try {
     initAudio();
   } catch(e) {}
@@ -7137,8 +7490,10 @@ gameOverScreen.addEventListener('click', startGame);
 gameOverScreen.addEventListener('touchstart', function(e) { e.preventDefault(); startGame(); });
 
 // Watch for game over
+let gameOverHandled = false;
 function checkGameOver() {
-  if (gameState === 'gameover') {
+  if (gameState === 'gameover' && !gameOverHandled) {
+    gameOverHandled = true;
     try {
       stopBossMusic();
       playSound('explosion');
